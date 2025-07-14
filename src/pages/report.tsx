@@ -1,3 +1,4 @@
+// --- PATCHED: /src/pages/report.tsx ---
 import React, { useEffect, useRef, useState } from "react";
 import { Chart, registerables } from "chart.js";
 import { marked } from "marked";
@@ -8,14 +9,13 @@ type ChartSpec = {
   graphType: "scatter" | "line" | "bar";
   xLabel: string;
   yLabel: string;
-  labels: (string | number)[];
+  labels?: (string | number)[];
   series: {
     label: string;
-    column: string;
+    column?: string;
     values: number[];
   }[];
 };
-
 
 export default function ReportPage() {
   const [title, setTitle] = useState("");
@@ -34,12 +34,9 @@ export default function ReportPage() {
     if (stored && editorRef.current) {
       (async () => {
         const htmlContent = await marked.parse(stored);
-        if (editorRef.current) {
-          editorRef.current.innerHTML = htmlContent;
-        }
+        editorRef.current!.innerHTML = htmlContent;
       })();
-    }
-    else {
+    } else {
       console.warn("No lab report found in storage.");
     }
 
@@ -58,10 +55,24 @@ export default function ReportPage() {
       const ctx = chartRef.current.getContext("2d");
       if (!ctx) return;
 
-      const labels = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
+      const labels =
+      Array.isArray(chartSpec.labels) && chartSpec.labels.length > 0
+        ? chartSpec.labels
+        : Array.isArray(chartSpec.series?.[0]?.values)
+          ? chartSpec.series[0].values.map((_, i) => i)
+          : [];
+
+
+      if (chartSpec.graphType === "scatter" && !Array.isArray(chartSpec.labels)) {
+        console.warn("⚠️ Scatter graph expected labels[], but none were provided.");
+      }
+
       const datasets = chartSpec.series.map((s, i) => ({
         label: s.label,
-        data: s.values, // assuming Claude sends `s.values` as array of y-values,
+        data:
+          chartSpec.graphType === "scatter"
+            ? labels.map((x, idx) => ({ x, y: s.values[idx] }))
+            : s.values,
         borderWidth: 2,
         borderColor: `hsl(${i * 90}, 70%, 50%)`,
         backgroundColor: `hsla(${i * 90}, 70%, 50%, 0.3)`

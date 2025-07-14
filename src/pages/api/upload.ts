@@ -1,4 +1,3 @@
-// --- PATCHED: /src/pages/api/upload.ts ---
 import type { NextApiRequest, NextApiResponse } from "next";
 import formidable from "formidable";
 import fs from "fs";
@@ -57,7 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log("Manual preview:", manualText.slice(0, 300));
     console.log("Raw data preview:", rawDataText.slice(0, 300));
-    console.log("chartSpec:", chartSpec);
+    console.log("Initial chartSpec:", chartSpec);
 
     const prompt = generateLabReportPrompt(manualText, rawDataText);
     console.log("Claude prompt preview:", prompt.slice(0, 500));
@@ -87,14 +86,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.log("Claude raw response:", bodyText);
 
       const data = JSON.parse(bodyText);
-      const report = data?.content?.[0]?.text;
+      const fullText = data?.content?.[0]?.text;
+      let report = fullText;
+      let extractedChartSpec = null;
+
+      const chartJsonMatch = fullText?.match(/```json\s*([\s\S]*?)```/);
+      if (chartJsonMatch) {
+        try {
+          extractedChartSpec = JSON.parse(chartJsonMatch[1]);
+          console.log("✅ Extracted chartSpec from Claude response:", extractedChartSpec);
+        } catch (e) {
+          console.warn("⚠️ Failed to parse chartSpec from Claude's markdown block");
+        }
+      }
+
+      // Remove chartSpec JSON block from markdown body if present
+      report = report?.replace(/```json\s*[\s\S]*?```/, "").trim();
 
       if (!report || report.length < 100) {
         console.error("⚠️ Empty or invalid report:", report);
         return res.status(500).json({ error: "Failed to generate report" });
       }
 
-      return res.status(200).json({ labReport: report, chartSpec });
+      return res.status(200).json({ labReport: report, chartSpec: extractedChartSpec });
     } catch (error) {
       console.error("Claude API call failed:", error);
       return res.status(500).json({ error: "Claude API call failed" });
