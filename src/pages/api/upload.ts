@@ -96,6 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           extractedChartSpec = JSON.parse(chartJsonMatch[1]);
           console.log("✅ Extracted chartSpec from Claude response:", extractedChartSpec);
         } catch (e) {
+          console.error("Error during upload/generation:", e);
           console.warn("⚠️ Failed to parse chartSpec from Claude's markdown block");
         }
       }
