@@ -26,9 +26,14 @@ export default function ReportPage() {
     console.log("labReport raw value:", stored);
 
     if (stored && editorRef.current) {
-      const htmlContent = marked.parse(stored);
-      editorRef.current.innerHTML = htmlContent;
-    } else {
+      (async () => {
+        const htmlContent = await marked.parse(stored);
+        if (editorRef.current) {
+          editorRef.current.innerHTML = htmlContent;
+        }
+      })();
+    }
+    else {
       console.warn("No lab report found in storage.");
     }
 
