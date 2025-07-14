@@ -1,4 +1,4 @@
-// --- /src/utils/prompts.ts ---
+// --- PATCHED: /src/utils/prompts.ts ---
 export const generateLabReportPrompt = (manualText: string, rawData: string): string => {
   const cleanedManual = manualText
     .split("\n")
@@ -23,6 +23,17 @@ ${rawData && rawData !== "No raw data was provided. Please interpret results bas
 • Conclusion: Link back to each hypothesis with outcome
 • References: Include 15–25 real, peer-reviewed primary sources related to the experiments described. Use Harvard style (Author, Year). Sources must be scientifically appropriate for each scientific concept. You may cite classic or recent studies, but do not invent references. Base all citations on the processes and enzyme behaviors described in the lab manual and raw data.
 • Appendix: Include raw absorbance data if mentioned in lab manual
+
+📈 Chart Configuration Output:
+In addition to the lab report, output a valid Chart.js config object called \`chartSpec\`. This object MUST include the following:
+- \`graphType\`: one of "bar", "line", or "scatter"
+- \`xLabel\` and \`yLabel\`: axis labels as strings
+- \`labels\`: array of x-axis values
+- \`series\`: an array of objects, each with:
+  - \`label\`: name of the dataset
+  - \`values\`: array of y-axis values, or for scatter: array of { x, y } objects
+
+Ensure \`series\` aligns with the experimental conditions and variables analyzed. Use real values from the data summary.
 
 ✍️ Instructions:
 Generate a lab report that mirrors the structure and flow of previous student submissions (like the one shown below), using precise scientific phrasing. Keep the Results section procedural and analytical (not interpretive). Keep the Discussion literature-heavy and mechanistic. Cite real peer-reviewed sources in Harvard style. Format tables cleanly with labeled columns and units.`;

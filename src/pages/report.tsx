@@ -8,8 +8,14 @@ type ChartSpec = {
   graphType: "scatter" | "line" | "bar";
   xLabel: string;
   yLabel: string;
-  series: { label: string; column: string }[];
+  labels: (string | number)[];
+  series: {
+    label: string;
+    column: string;
+    values: number[];
+  }[];
 };
+
 
 export default function ReportPage() {
   const [title, setTitle] = useState("");
@@ -55,9 +61,7 @@ export default function ReportPage() {
       const labels = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
       const datasets = chartSpec.series.map((s, i) => ({
         label: s.label,
-        data: labels.map(() => [
-          [-0.167, -0.105, -0.05, 0, 0.046, 0.087, 0.127, 0.166, 0.204, 0.241, 0.277][i % 11]
-        ][0]),
+        data: s.values, // assuming Claude sends `s.values` as array of y-values,
         borderWidth: 2,
         borderColor: `hsl(${i * 90}, 70%, 50%)`,
         backgroundColor: `hsla(${i * 90}, 70%, 50%, 0.3)`
