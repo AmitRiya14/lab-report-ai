@@ -1,11 +1,15 @@
+// --- PATCHED: /src/components/LabUploader.tsx ---
 "use client";
 import React, { useState, useRef } from "react";
 import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
+import { useRouter } from "next/navigation";
 
 export default function LabUploader() {
   const [files, setFiles] = useState<FileList | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(e.target.files);
@@ -24,25 +28,35 @@ export default function LabUploader() {
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    setMessage("Uploading files...");
+
     const formData = new FormData();
     for (let i = 0; i < files.length; i++) {
       formData.append("files", files[i]);
     }
 
     try {
-      const res = await fetch("/api/upload", {
+      const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
-      if (res.ok) {
-        window.location.href = "/report";
-      } else {
-        window.location.href = "/error";
+      const uploadData = await uploadRes.json();
+      console.log("Upload response:", uploadData);
+
+      if (!uploadData.labReport || !uploadData.chartSpec) {
+        alert("Upload succeeded, but Claude response or chart data was invalid.");
+        return;
       }
+
+      localStorage.setItem("labReport", uploadData.labReport);
+      localStorage.setItem("chartSpec", JSON.stringify(uploadData.chartSpec));
+
+      setMessage("✅ Report generated. Redirecting...");
+      router.push("/report");
     } catch (error) {
-      console.error("Upload error:", error);
-      window.location.href = "/error";
+      console.error("Error during upload/generation:", error);
+      alert("Something went wrong. See console for details.");
     } finally {
       setUploading(false);
     }
@@ -94,7 +108,7 @@ export default function LabUploader() {
           {uploading ? "Uploading..." : "Generate Report"}
         </button>
 
-        {uploading && <div className="mt-4 text-center text-blue-600">Uploading... please wait.</div>}
+        {message && <div className="mt-4 text-center text-blue-700 font-medium">{message}</div>}
 
         <div className="text-sm text-gray-600 mt-8">
           <details>

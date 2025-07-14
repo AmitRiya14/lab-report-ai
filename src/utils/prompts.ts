@@ -1,33 +1,29 @@
-// --- /utils/prompts.ts ---
+// --- /src/utils/prompts.ts ---
 export const generateLabReportPrompt = (manualText: string, rawData: string): string => {
-  const formattedData = Array.isArray(rawData)
-    ? rawData.map(row => row.join('\t')).join('\n')
-    : rawData;
+  const cleanedManual = manualText
+    .split("\n")
+    .filter((line, idx, arr) => line.trim() !== "" && line.trim() !== arr[idx - 1]?.trim())
+    .join("\n");
 
-  return `You are a scientific writer. Your task is to write a complete, original lab report using the materials below.
-
-DO NOT reuse prior reports or invent generalized content. Base all sections strictly on the following lab manual and data.
-
----
-📘 Lab Manual Content:
-${manualText}
-
-${formattedData && formattedData !== "No raw data was provided. Please interpret results based on expected trends and procedures." ? `📊 Raw Data (analyze this in results/discussion):
-${formattedData}` : ""}
+  return `You are a scientific writer. Your task is to write a complete, original lab report using ONLY the lab manual and raw data below. You must follow the expected structure and tone of a university-level physiology lab report.
 
 ---
-✍️ Write the report in this order:
-1. Title (be descriptive and specific)
-2. Abstract (summarize this experiment only)
-3. Introduction (use scientific background relevant to this experiment)
-4. Hypothesis (infer from procedure)
-5. Materials & Methods (summarize from manual)
-6. Results (analyze actual or inferred data)
-7. Discussion (interpret results in context)
-8. Conclusion (summarize key takeaways)
-9. References (fabricate but realistic)
-10. Appendix (mention raw data origin if any)
+📘 Lab Manual:
+${cleanedManual}
 
-🧠 Reminder: This is a lab about ${manualText.slice(0, 100).replace(/\s+/g, ' ')}...
-ONLY write about that.`;
+${rawData && rawData !== "No raw data was provided. Please interpret results based on expected trends and procedures." ? `📊 Raw Data Summary:\n${rawData}` : ""}
+
+📋 Grading Rubric Expectations:
+• Title: Clear and descriptive, includes student name, date, experiment number
+• Abstract: Covers rationale, objective, hypothesis, key methods, results, and conclusion
+• Introduction: Explains digestion, enzymes involved, relevant mechanisms, hypotheses with citation support
+• Methods: Concise but detailed enough to indicate exact treatments used per test tube or condition
+• Results: Describe visual/quantitative outcomes per condition (e.g. test tube by test tube), use appropriate tables with labeled units
+• Discussion: Analyze why results occurred with reference to molecular mechanisms and published literature (cite minimum 15–20 peer-reviewed articles in Harvard style)
+• Conclusion: Link back to each hypothesis with outcome
+• References: Include 15–25 real, peer-reviewed primary sources related to the experiments described. Use Harvard style (Author, Year). Sources must be scientifically appropriate for each scientific concept. You may cite classic or recent studies, but do not invent references. Base all citations on the processes and enzyme behaviors described in the lab manual and raw data.
+• Appendix: Include raw absorbance data if mentioned in lab manual
+
+✍️ Instructions:
+Generate a lab report that mirrors the structure and flow of previous student submissions (like the one shown below), using precise scientific phrasing. Keep the Results section procedural and analytical (not interpretive). Keep the Discussion literature-heavy and mechanistic. Cite real peer-reviewed sources in Harvard style. Format tables cleanly with labeled columns and units.`;
 };
