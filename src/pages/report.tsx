@@ -1,19 +1,21 @@
-// --- PATCHED: /src/pages/report.tsx ---
 import React, { useEffect, useRef, useState } from "react";
-import { jsPDF } from "jspdf";
-import { Document, Packer, Paragraph, TextRun } from "docx";
-import { saveAs } from "file-saver";
 import { Chart, registerables } from "chart.js";
 import { marked } from "marked";
 
 Chart.register(...registerables);
 
+type ChartSpec = {
+  graphType: "scatter" | "line" | "bar";
+  xLabel: string;
+  yLabel: string;
+  series: { label: string; column: string }[];
+};
+
 export default function ReportPage() {
   const [title, setTitle] = useState("");
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
-  const [reportText, setReportText] = useState("");
-  const [chartSpec, setChartSpec] = useState<any>(null);
+  const [chartSpec, setChartSpec] = useState<ChartSpec | null>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -26,14 +28,13 @@ export default function ReportPage() {
     if (stored && editorRef.current) {
       const htmlContent = marked.parse(stored);
       editorRef.current.innerHTML = htmlContent;
-      setReportText(stored);
     } else {
       console.warn("No lab report found in storage.");
     }
 
     if (chartJson) {
       try {
-        const parsed = JSON.parse(chartJson);
+        const parsed: ChartSpec = JSON.parse(chartJson);
         setChartSpec(parsed);
       } catch (err) {
         console.error("Error parsing chartSpec from localStorage:", err);
@@ -47,9 +48,9 @@ export default function ReportPage() {
       if (!ctx) return;
 
       const labels = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
-      const datasets = chartSpec.series.map((s: any, i: number) => ({
+      const datasets = chartSpec.series.map((s, i) => ({
         label: s.label,
-        data: labels.map((_, j) => [
+        data: labels.map(() => [
           [-0.167, -0.105, -0.05, 0, 0.046, 0.087, 0.127, 0.166, 0.204, 0.241, 0.277][i % 11]
         ][0]),
         borderWidth: 2,
@@ -59,19 +60,12 @@ export default function ReportPage() {
 
       new Chart(ctx, {
         type: chartSpec.graphType,
-        data: {
-          labels,
-          datasets
-        },
+        data: { labels, datasets },
         options: {
           responsive: true,
           scales: {
-            x: {
-              title: { display: true, text: chartSpec.xLabel },
-            },
-            y: {
-              title: { display: true, text: chartSpec.yLabel },
-            },
+            x: { title: { display: true, text: chartSpec.xLabel } },
+            y: { title: { display: true, text: chartSpec.yLabel } },
           },
         },
       });

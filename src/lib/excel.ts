@@ -1,5 +1,6 @@
 // --- /lib/excel.ts ---
 import * as XLSX from "xlsx";
+type ExcelRow = Record<string, string | number | boolean | null>;
 
 export interface ChartSpec {
   graphType: "scatter" | "line" | "bar";
@@ -14,10 +15,20 @@ export async function processExcelFile(filepath: string): Promise<{
 }> {
   const workbook = XLSX.readFile(filepath);
   const sheetName = workbook.SheetNames[0];
-  const sheet = XLSX.utils.sheet_to_json<Record<string, any>>(workbook.Sheets[sheetName], { defval: null });
+  const sheet = XLSX.utils.sheet_to_json<ExcelRow>(workbook.Sheets[sheetName], { defval: null });
+
 
   const headers = Object.keys(sheet[0] || {});
-  const rows = sheet.map(row => Object.values(row).map(val => typeof val === "number" ? val : parseFloat(val)));
+  const rows = sheet.map(row =>
+  Object.values(row).map(val =>
+    typeof val === "number"
+      ? val
+      : typeof val === "string"
+        ? parseFloat(val)
+        : NaN // fallback for boolean or null
+  )
+);
+
 
   const xLabel = headers[0];
   const yLabels = headers.slice(1);

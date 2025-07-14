@@ -1,6 +1,13 @@
 // --- /lib/claude.ts ---
 
-export async function generateChartSpecFromManual(manualText: string): Promise<any> {
+export type ChartSpec = {
+  graphType: "line" | "bar" | "scatter";
+  xLabel: string;
+  yLabel: string;
+  series: { label: string; column: string }[];
+};
+
+export async function generateChartSpecFromManual(manualText: string): Promise<ChartSpec> {
   const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -31,7 +38,6 @@ Manual text:
     })
   });
 
-  const contentType = response.headers.get("content-type");
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Claude API error: ${errorText}`);
