@@ -1,3 +1,4 @@
+'use client';
 import Link from "next/link";
 
 export default function ErrorPage() {
@@ -7,11 +8,10 @@ export default function ErrorPage() {
       <p className="text-gray-700 max-w-md mb-6">
         Something went wrong while uploading your files. Please check your internet connection, file types, or try again later.
       </p>
-      <Link
-        href="/"
-        className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition"
-      >
-        Back to Home
+      <Link href="/">
+        <span className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition inline-block">
+          Back to Home
+        </span>
       </Link>
     </div>
   );
