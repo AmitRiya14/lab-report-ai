@@ -1,0 +1,18 @@
+{
+  "464da737d8f4c74846c3c06cdb6bec324bf53ad50f9a7edb610ebfded63896b2": {
+    "editedText": "Six tubes were prepared in pairs (experimental and blank) to test trypsin activity alone, with PMSF inhibitor, and with soybean trypsin inhibitor. Experimental tubes contained 3 ml BAPNA substrate (1 mM in 0.1 M phosphate buffer, pH 8.2), appropriate inhibitors, and 12 μl trypsin. Blanks contained identical solutions without trypsin. Absorbance was measured at 410 nm every 2 minutes for 20 minutes.",
+    "summaryTitle": "Removed tube numbers and condensed experimental setup description"
+  },
+  "3da56d2491b64af664546654365c9f2d1ea76e960e2e23b58d71cb6ca049e116": {
+    "editedText": "Six tubes were prepared in pairs (experimental and blank) to test trypsin activity alone, with PMSF inhibitor, and with soybean trypsin inhibitor. Experimental tubes contained 3 ml BAPNA substrate (1 mM, pH 8.2) and 12 μl trypsin; blanks omitted trypsin. Absorbance was measured at 410 nm every 2 minutes for 20 minutes.",
+    "summaryTitle": "Condensed experimental setup by removing redundant details and tube numbers."
+  },
+  "dc3a23eb892de9589a16d6a222744c012807dd9b7c3c18a49c57cbf6be465391": {
+    "editedText": "This lab investigated enzymatic digestion of macromolecules using α-amylase, pancreatic lipase, and trypsin. We hypothesized th",
+    "summaryTitle": "Condensed objective by removing redundant details and simplifying language."
+  },
+  "b7174bf86e712b5d7e4d1f36906400ff1477b8c5ac3cbba58f3411da624aab20": {
+    "editedText": "The primary objective of this comprehensive laboratory investigation was to systematically examine and analyze the enzymatic digestion of macromolecules by studying the specific activity, kinetic properties, and optimal conditions of key digestive enzymes that play crucial roles in human metabolism. Three distinct experimental procedures were carefully designed and conducted to thoroughly analyze the breakdown of different macromolecule types: first, the digestion of starch polysaccharides by α-amylase enzyme, second, the hydrolysis of lipids and fats by pancreatic lipase, and third, the proteolytic cleavage of proteins by trypsin protease. Based on established biochemical principles and previous research findings, we hypothesized that each enzyme would demonstrate specific substrate specificity and that their catalytic activity would be influenced by environmental factors such as pH, temperature, and substrate concentration, with each enzyme exhibiting optimal performance under physiologically relevant conditions that mirror those found in the human digestive system.",
+    "summaryTitle": "Expanded objective section with detailed experimental design and comprehensive hypothesis"
+  }
+}

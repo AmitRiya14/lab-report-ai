@@ -1,4 +1,5 @@
-// --- /lib/claude.ts ---
+// --- PATCHED: /lib/claude.ts ---
+import { getHash, getCachedEdit, storeCachedEdit } from './cache';
 
 export type ChartSpec = {
   graphType: "line" | "bar" | "scatter";
@@ -55,7 +56,7 @@ Manual text:
   }
 }
 
-export async function generateLabReport(manualText: string, rawDataSummary: string, rubricText: string): Promise<string | null> {
+export async function generateLabReport(manualText: string, rawDataSummary: string): Promise<string | null> {
   const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 
   const fullPrompt = `You are a scientific writer. Your task is to write a complete, original lab report using the materials below.
@@ -63,16 +64,14 @@ export async function generateLabReport(manualText: string, rawDataSummary: stri
 DO NOT reuse prior reports or invent generalized content. Base all sections strictly on the following lab manual and data.
 
 ---
-\ud83d\udcd8 Lab Manual:
+📘 Lab Manual:
 ${manualText}
 
-\ud83d\udcca Raw Data:
+📊 Raw Data:
 ${rawDataSummary}
 
-\ud83d\udccb Grading Rubric:
-${rubricText}
 
-\u270d\ufe0f Instructions: Generate a full lab report following these grading criteria and based solely on the material above.`;
+✍️ Instructions: Generate a full lab report following these grading criteria and based solely on the material above.`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -112,4 +111,60 @@ ${rubricText}
     console.error("Claude lab report generation failed:", err);
     return null;
   }
+}
+
+export async function editHighlightedText(prompt: string, text: string, fullReport: string) {
+  const hash = getHash(text, prompt);
+  const cached = getCachedEdit(hash);
+  if (cached) return cached;
+
+  const fullPrompt = `
+You are an AI assistant helping revise a lab report. Follow the user instruction precisely.
+
+Instruction: ${prompt}
+Full Report (for context only):
+"""
+${fullReport}
+"""
+Text:
+"""
+${text}
+"""
+
+Rewrite the passage accordingly. Also return a short summary of the change (max 12 words).
+Respond in this JSON format:
+{
+  "editedText": "...",
+  "summaryTitle": "..."
+}`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": process.env.CLAUDE_API_KEY!,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      temperature: 0.4,
+      max_tokens: 400,
+      messages: [
+        {
+          role: "user",
+          content: fullPrompt
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Claude edit error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const parsed = JSON.parse(data?.content?.[0]?.text || '{}');
+  storeCachedEdit(hash, parsed);
+  return parsed;
 }
