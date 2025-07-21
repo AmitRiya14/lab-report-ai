@@ -29,12 +29,26 @@ export default function PromptPopover({
         style={{
           position: "absolute",
           left: anchorEl.left,
-          top: anchorEl.bottom + 8,
+          top: Math.max(
+            window.innerHeight - anchorEl.bottom < 200
+              ? anchorEl.top - 200 - 8
+              : anchorEl.bottom + 8,
+            8 // ← minimum margin from top
+          ),
+
+
           zIndex: 50,
           width: 360,
         }}
         className="rounded-xl border border-gray-200 shadow-xl bg-white p-4"
       >
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-lg"
+        >
+          ×
+        </button>
+
         <div className="text-sm font-semibold text-cyan-700 mb-2">✏️ Edit Selected Text</div>
         <div className="bg-cyan-50 text-cyan-800 text-sm p-2 mb-3 rounded border border-cyan-100">
           “{previewText}”

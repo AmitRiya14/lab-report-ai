@@ -24,7 +24,6 @@ import {
   CircleCheck,
   Target
 } from "lucide-react";
-import InlineDiff from "@/components/InlineDiff";
 import PromptPopover from "@/components/PromptModal";
 
 
@@ -84,8 +83,8 @@ export default function ReportPage() {
   const [popoverAnchor, setPopoverAnchor] = useState<DOMRect | null>(null);
   const [selectedText, setSelectedText] = useState("");
 
-  const [diffData, setDiffData] = useState<null | { original: string; updated: string }>(null);
   const [previewText, setPreviewText] = useState("");
+  const savedRangeRef = useRef<Range | null>(null);
 
   const handleHighlightEdit = () => {
     const selection = window.getSelection();
@@ -93,9 +92,10 @@ export default function ReportPage() {
     const range = selection?.getRangeAt(0);
     const rect = range?.getBoundingClientRect();
 
-    if (text && rect) {
+    if (text && rect && range) {
       setSelectedText(text);
       setPopoverAnchor(rect);
+      savedRangeRef.current = range.cloneRange(); // ✅ store actual DOM range
       const words = text.split(/\s+/);
       setPreviewText(
         words.length > 10
@@ -103,72 +103,91 @@ export default function ReportPage() {
           : text
       );
 
-
       setModalOpen(true);
     }
   };
 
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+
   const applyDiff = async (prompt: string) => {
     setModalOpen(false);
 
-    const response = await fetch('/api/edit-highlight', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, original: selectedText }),
-    });
+    const range = savedRangeRef.current;
+    const editor = editorRef.current;
 
-    let result;
-    try {
-      result = await response.json();
-    } catch (err) {
-      console.error('Failed to parse JSON:', err);
-      // Optionally show a toast or fallback message
+    if (!range || !editor) {
+      console.warn("Missing saved range or editor");
+      return;
     }
 
+    const originalText = range.toString();
 
-    if (!result) return;
-    const { editedText, summaryTitle } = result;
+    try {
+      const res = await fetch("/api/edit-highlight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          original: originalText,
+          fullReport: editor.innerText,
+        }),
+      });
 
+      const { editedText } = await res.json();
+      const parsedHTML = await marked.parse(editedText); // ✅ convert Markdown to real HTML
+      console.log("[Claude] Edited Text:", editedText);
 
-    // Wrap the Claude-generated text in a yellow span with the original as a data attribute
-    const wrapped = `<span class="inline-edit-suggestion" data-original="${encodeURIComponent(
-      selectedText
-    )}">${editedText}</span>`;
+      const editedHTML = `
+        <div class="inline-edit-suggestion bg-yellow-100 border border-yellow-300 px-1 rounded-sm relative" data-original="${encodeURIComponent(originalText)}">
+          ${parsedHTML}
+        </div>
+      `;
 
-    const updated = reportText.replace(selectedText, wrapped);
-    setReportText(updated);
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = editedHTML;
+      const fragment = document.createDocumentFragment();
+      Array.from(wrapper.childNodes).forEach(child => fragment.appendChild(child));
 
-    setVersionHistory([
-      {
-        timestamp: new Date().toLocaleString(),
-        summary: summaryTitle,
-        content: updated,
-      },
-      ...versionHistory,
-    ]);
+      range.deleteContents();
+      const existingBoxes = editor.querySelectorAll(".inline-action-box");
+      existingBoxes.forEach(box => box.remove());
+      range.insertNode(fragment);
 
-    setDiffData({ original: selectedText, updated: editedText });
+      setReportText(editor.innerHTML);
+      setVersionHistory(prev => [
+        {
+          timestamp: new Date().toLocaleString(),
+          summary: prompt,
+          content: editor.innerHTML,
+        },
+        ...prev,
+      ]);
 
-    if (editorRef.current) editorRef.current.innerHTML = updated;
+      savedRangeRef.current = null;
+    } catch (err) {
+      console.error("Claude API failed", err);
+    }
   };
 
 
 
 
-  const chartRef = useRef<HTMLCanvasElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-
-  const handleRestore = (content: string) => {
+  const handleRestore = async (content: string) => {
     if (!content || content.trim().length < 10) {
       console.warn("Empty restore content – skipping.");
       return;
     }
 
-    setReportText(content);
+    // Optional: Convert markdown to HTML if needed
+    const html = content.includes("<p>") ? content : await marked.parse(content);
+
+    setReportText(html);
     if (editorRef.current) {
-      editorRef.current.innerHTML = content;
+      editorRef.current.innerHTML = html;
     }
   };
+
 
 
   const handleExport = (format: string) => {
@@ -275,27 +294,62 @@ export default function ReportPage() {
   }, [chartSpec]);
 
   useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      const span = target.closest(".inline-edit-suggestion") as HTMLElement;
-      if (!span) return;
+      const container = target.closest(".inline-edit-suggestion") as HTMLElement;
+      if (!container) return;
 
-      const actionBox = span.querySelector(".inline-action-box");
-      const original = decodeURIComponent(span.dataset.original || "");
+      // Handle Accept
+      if (target.classList.contains("accept-btn")) {
+        container.classList.remove("inline-edit-suggestion", "bg-yellow-100", "border-yellow-300");
+        const box = container.querySelector(".inline-action-box");
+        if (box) box.remove();
+        container.removeAttribute("data-original");
+        setReportText(editor.innerHTML);
+      }
 
-      // Hover hint will handle Accept/Reject decision
-      const accept = confirm("Accept the suggested change?");
-      if (accept) {
-        span.classList.remove("inline-edit-suggestion");
-        span.removeAttribute("data-original");
-      } else {
-        span.outerHTML = original;
+      // Handle Reject
+      if (target.classList.contains("reject-btn")) {
+        const original = decodeURIComponent(container.dataset.original || "").trim();
+        const paragraphs = original.split(/\n{2,}/);
+        const fragment = document.createDocumentFragment();
+        for (const para of paragraphs) {
+          const p = document.createElement("p");
+          p.textContent = para.trim();
+          fragment.appendChild(p);
+        }
+        container.replaceWith(fragment);
+        setReportText(editor.innerHTML);
       }
     };
 
+    const handleHover = (e: MouseEvent) => {
+      const container = (e.target as HTMLElement).closest(".inline-edit-suggestion") as HTMLElement;
+      if (!container || container.querySelector(".inline-action-box")) return;
+
+      const box = document.createElement("div");
+      box.className = "inline-action-box absolute left-0 mt-1 bg-white border text-sm px-2 py-1 rounded shadow flex gap-2 z-50";
+      box.innerHTML = `
+        <button class="text-green-600 accept-btn">✅ Accept</button>
+        <button class="text-red-600 reject-btn">❌ Reject</button>
+      `;
+      container.appendChild(box);
+    };
+
     document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+    editor.addEventListener("mouseover", handleHover);
+
+    return () => {
+      document.removeEventListener("click", handleClick);
+      editor.removeEventListener("mouseover", handleHover);
+    };
   }, []);
+
+
+
 
 
   return (
@@ -394,23 +448,6 @@ export default function ReportPage() {
               onSubmit={applyDiff}
             />
           )}
-
-          {diffData && (
-            <div className="mt-6">
-              <InlineDiff
-                original={diffData.original}
-                updated={diffData.updated}
-                onAccept={() => {
-                  setReportText(reportText.replace(diffData.original, diffData.updated));
-                  setDiffData(null);
-                  if (editorRef.current)
-                    editorRef.current.innerHTML = reportText.replace(diffData.original, diffData.updated);
-                }}
-                onReject={() => setReportText(reportText)}
-              />
-            </div>
-          )}
-
 
           <div className="mt-8">
             <h2 className="text-lg font-semibold mb-2">Rubric Feedback</h2>

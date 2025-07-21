@@ -72,7 +72,7 @@
   .inline-edit-suggestion {
     @apply bg-yellow-100 cursor-pointer relative transition-colors duration-300;
   }
-
+/*
   .inline-edit-suggestion:hover::after {
     content: "✅ Accept | ❌ Reject";
     position: absolute;
@@ -87,4 +87,5 @@
     white-space: nowrap;
     z-index: 100;
   }
+    */
 }
