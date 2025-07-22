@@ -5,7 +5,7 @@ export type ChartSpec = {
   graphType: "line" | "bar" | "scatter";
   xLabel: string;
   yLabel: string;
-  series: { label: string; column: string }[];
+  series: { label: string; column: string; values: number[] }[];
 };
 
 export async function generateChartSpecFromManual(manualText: string): Promise<ChartSpec> {
@@ -167,4 +167,76 @@ Respond in this JSON format:
   const parsed = JSON.parse(data?.content?.[0]?.text || '{}');
   storeCachedEdit(hash, parsed);
   return parsed;
+}
+
+export async function callClaude(prompt: string, maxTokens = 800, temperature = 0.4): Promise<string> {
+  const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+  if (!CLAUDE_API_KEY) throw new Error("Claude API key not set");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": CLAUDE_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      temperature,
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    })
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(`Claude API error: ${result?.error?.message || response.statusText}`);
+  }
+
+  return result?.content?.[0]?.text?.trim() || "";
+}
+
+// --- New: Claude Streaming Wrapper ---
+export async function streamClaude({
+  prompt,
+  temperature = 0.4,
+  max_tokens = 800,
+  signal
+}: {
+  prompt: string;
+  temperature?: number;
+  max_tokens?: number;
+  signal?: AbortSignal;
+}): Promise<ReadableStream<Uint8Array>> {
+  const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+  if (!CLAUDE_API_KEY) throw new Error("Claude API key not set");
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": CLAUDE_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json"
+    },
+    signal,
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      stream: true,
+      temperature,
+      max_tokens,
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
+
+  if (!res.ok || !res.body) {
+    const errText = await res.text();
+    throw new Error(`Claude streaming error: ${errText}`);
+  }
+
+  return res.body;
 }

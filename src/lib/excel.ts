@@ -6,7 +6,7 @@ export interface ChartSpec {
   graphType: "scatter" | "line" | "bar";
   xLabel: string;
   yLabel: string;
-  series: { label: string; column: string }[];
+  series: { label: string; column: string; values: number[] }[];
 }
 
 export async function processExcelFile(filepath: string): Promise<{
@@ -36,7 +36,15 @@ export async function processExcelFile(filepath: string): Promise<{
     graphType: "scatter",
     xLabel,
     yLabel: "Absorbance units (AU)",
-    series: yLabels.map(label => ({ label: label.replace(/\(.*?\)/g, "").trim(), column: `tube_${label.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}` }))
+    series: yLabels.map((yLabel) => ({
+  label: yLabel.replace(/\(.*?\)/g, "").trim(),
+  column: `tube_${yLabel.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}`,
+  values: sheet.map((row) => {
+    const val = row[yLabel];
+    return typeof val === "number" ? val : parseFloat(val as string) || 0;
+  }),
+}))
+
   };
 
   let summary = `Excel headers: [ ${headers.join(", ")} ]\n`;

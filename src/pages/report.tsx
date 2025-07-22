@@ -4,6 +4,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Chart, registerables } from "chart.js";
 import { marked } from "marked";
+import { flushSync } from 'react-dom';
 import {
   Upload,
   FileText,
@@ -43,6 +44,49 @@ type ChartSpec = {
   }[];
 };
 
+export async function streamSSE(response: Response, onMessage: (text: string) => void) {
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  if (!reader) {
+    console.error("❌ No readable stream body found.");
+    return;
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    buffer += chunk;
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // Ignore empty lines or non-data events
+      if (!trimmed.startsWith("data:")) continue;
+
+      const jsonStr = trimmed.replace(/^data:\s*/, "");
+
+      try {
+        const parsed = JSON.parse(jsonStr);
+
+        if (parsed?.type === "content_block_delta" && parsed?.delta?.text) {
+          onMessage(parsed.delta.text); // Append live text
+        }
+      } catch (err) {
+        console.warn("⚠️ Skipping invalid JSON line:", trimmed);
+      }
+    }
+  }
+}
+
+
+
 export default function ReportPage() {
   const [title, setTitle] = useState("Lab Report: Quantum Entanglement Experiment");
   const [name, setName] = useState("Student Name");
@@ -51,6 +95,114 @@ export default function ReportPage() {
   const [reportText, setReportText] = useState("");
   const [chartSpec, setChartSpec] = useState<ChartSpec | null>(null);
   const initialContent = typeof window !== 'undefined' ? localStorage.getItem("labReport") || "" : "";
+  const [rubricFeedback, setRubricFeedback] = useState("");
+  const [rubricText, setRubricText] = useState("");
+  const [manualText, setManualText] = useState("");
+  const [cleanRubric, setCleanRubric] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const rubricRef = useRef<HTMLDivElement>(null);
+  const [isEditStreaming, setIsEditStreaming] = useState(false);
+const [streamingText, setStreamingText] = useState("");
+const [streamingContainer, setStreamingContainer] = useState<HTMLElement | null>(null);
+
+
+// Debug version of handleCheckCompleteness - replace your current function
+const handleCheckCompleteness = async () => {
+  console.log("🚀 Starting streaming request...");
+  setRubricFeedback(""); 
+  setCleanRubric("");
+  setIsStreaming(true);
+
+  try {
+    const response = await fetch("/api/rubric", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportText, rubricText, manualText }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+    let accumulatedPlainText = ""; // For clean display
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        
+        const jsonStr = trimmed.slice(6);
+        if (jsonStr === '[DONE]') continue;
+        
+        try {
+          const parsed = JSON.parse(jsonStr);
+          
+          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+            const newText = parsed.delta.text;
+            accumulatedText += newText;
+            
+            // Strip markdown from the accumulated text in real-time
+            const cleanText = stripMarkdownSync(accumulatedText);
+            accumulatedPlainText = cleanText;
+            
+            // Display the clean text
+            setRubricFeedback(cleanText);
+          }
+        } catch (parseError) {
+          console.warn("⚠️ JSON parse error:", parseError);
+        }
+      }
+    }
+
+    // Final cleanup
+    if (accumulatedPlainText) {
+      setCleanRubric(accumulatedPlainText);
+      localStorage.setItem("lastRubricFeedback", accumulatedPlainText);
+    }
+
+  } catch (error) {
+    console.error("💥 Streaming error:", error);
+    setRubricFeedback(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    setIsStreaming(false);
+  }
+};
+
+// Synchronous markdown stripping function (faster for real-time)
+function stripMarkdownSync(text: string): string {
+  return text
+    // Remove headers
+    .replace(/^#{1,6}\s+(.+)$/gm, '$1')
+    // Remove bold/italic
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    // Remove code blocks
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`(.+?)`/g, '$1')
+    // Remove links
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Remove strikethrough
+    .replace(/~~(.+?)~~/g, '$1')
+    // Remove blockquotes
+    .replace(/^>\s+(.+)$/gm, '$1')
+    // Remove list markers
+    .replace(/^[\s]*[-*+]\s+(.+)$/gm, '• $1')
+    .replace(/^[\s]*\d+\.\s+(.+)$/gm, '$1')
+    // Clean up extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
   const [versionHistory, setVersionHistory] = useState([
     {
@@ -77,7 +229,12 @@ export default function ReportPage() {
     })();
   }, []);
 
-
+// After successful completion
+useEffect(() => {
+  if (!isStreaming && rubricFeedback && cleanRubric) {
+    localStorage.setItem("lastRubricFeedback", cleanRubric);
+  }
+}, [isStreaming, rubricFeedback, cleanRubric]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [popoverAnchor, setPopoverAnchor] = useState<DOMRect | null>(null);
@@ -110,65 +267,365 @@ export default function ReportPage() {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
-  const applyDiff = async (prompt: string) => {
-    setModalOpen(false);
+// Complete fixed streaming applyDiff function
+// Fixed applyDiff function with proper streaming display
 
-    const range = savedRangeRef.current;
-    const editor = editorRef.current;
+// Replace your applyDiff function with this version that forces React updates:
 
-    if (!range || !editor) {
-      console.warn("Missing saved range or editor");
-      return;
+const applyDiff = async (prompt: string) => {
+  setModalOpen(false);
+
+  const range = savedRangeRef.current;
+  const editor = editorRef.current;
+
+  if (!range || !editor) {
+    console.warn("Missing saved range or editor");
+    return;
+  }
+
+  // FIX 1: Remove any existing action boxes and prevent conflicts
+  const existingBoxes = editor.querySelectorAll(".inline-action-box");
+  existingBoxes.forEach(box => box.remove());
+
+  // FIX 2: Clear any processing states
+  const existingContainers = editor.querySelectorAll(".inline-edit-suggestion");
+  existingContainers.forEach(container => {
+    container.removeAttribute("data-processing");
+  });
+
+  const originalText = range.toString();
+  console.log("🚀 Starting edit streaming for:", originalText.substring(0, 50) + "...");
+
+  // FIX 3: Create properly wrapped container
+  const streamingSpan = document.createElement("span");
+  streamingSpan.className = "inline-edit-suggestion animate-pulse";
+  streamingSpan.setAttribute("data-original", encodeURIComponent(originalText));
+  streamingSpan.setAttribute("data-processing", "true"); // Prevent duplicates
+  
+  // Initial streaming message
+  streamingSpan.innerHTML = '<span class="streaming-content text-gray-500 italic">Claude is rewriting...</span>';
+
+  // FIX 4: Better range replacement that preserves structure
+  try {
+    // Extract any HTML structure from the selected range
+    const selectedFragment = range.extractContents();
+    const tempDiv = document.createElement('div');
+    tempDiv.appendChild(selectedFragment);
+    const hadParagraphs = tempDiv.querySelector('p') !== null;
+    
+    // Insert our streaming container
+    range.insertNode(streamingSpan);
+    
+    // Clear selection
+    window.getSelection()?.removeAllRanges();
+    
+  } catch (error) {
+    console.error("Range manipulation error:", error);
+    return;
+  }
+
+  setStreamingContainer(streamingSpan);
+  setIsEditStreaming(true);
+  setStreamingText("");
+
+  try {
+    const response = await fetch("/api/edit-highlight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        original: originalText,
+        fullReport: editor.innerText,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const originalText = range.toString();
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+    let buffer = "";
 
-    try {
-      const res = await fetch("/api/edit-highlight", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          original: originalText,
-          fullReport: editor.innerText,
-        }),
-      });
+    const contentSpan = streamingSpan.querySelector('.streaming-content');
+    if (!contentSpan) {
+      throw new Error("Content span not found");
+    }
 
-      const { editedText } = await res.json();
-      const parsedHTML = await marked.parse(editedText); // ✅ convert Markdown to real HTML
-      console.log("[Claude] Edited Text:", editedText);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        console.log("✅ Streaming completed");
+        break;
+      }
 
-      const editedHTML = `
-        <div class="inline-edit-suggestion bg-yellow-100 border border-yellow-300 px-1 rounded-sm relative" data-original="${encodeURIComponent(originalText)}">
-          ${parsedHTML}
-        </div>
-      `;
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+      
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || "";
+      
+      for (const line of lines) {
+        if (!line.trim() || !line.startsWith('data: ')) continue;
+        
+        const dataStr = line.slice(6).trim();
+        if (dataStr === '[DONE]') continue;
+        
+        try {
+          const parsed = JSON.parse(dataStr);
+          
+          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+            const newText = parsed.delta.text;
+            accumulatedText += newText;
+            
+            // Format text for proper display
+            let displayText = accumulatedText
+              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+              .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+              .replace(/`([^`]+)`/g, '<code class="bg-gray-200 px-1 rounded text-xs">$1</code>');
+            
+            // Handle paragraph breaks properly
+            if (displayText.includes('\n\n')) {
+              // Convert double newlines to paragraph breaks
+              const paragraphs = displayText.split('\n\n').filter(p => p.trim());
+              displayText = paragraphs.map(p => 
+                p.trim() ? `<p class="inline">${p.replace(/\n/g, '<br>')}</p>` : ''
+              ).join('');
+            } else {
+              // Single paragraph with line breaks
+              displayText = displayText.replace(/\n/g, '<br>');
+            }
+            
+            // Update the content
+            contentSpan.innerHTML = displayText || accumulatedText;
+            contentSpan.className = 'streaming-content text-gray-800';
+            
+            // Force visual update
+            contentSpan.offsetHeight;
+            setStreamingText(accumulatedText);
+            
+            // Controlled streaming speed
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
+        } catch (parseError) {
+          console.warn("⚠️ JSON parse error:", parseError);
+        }
+      }
+    }
 
-      const wrapper = document.createElement("div");
-      wrapper.innerHTML = editedHTML;
-      const fragment = document.createDocumentFragment();
-      Array.from(wrapper.childNodes).forEach(child => fragment.appendChild(child));
+    // FIX 5: Clean finalization
+    if (streamingSpan && accumulatedText.trim()) {
+      console.log("✅ Finalizing stream");
+      
+      // Remove pulsing animation
+      streamingSpan.classList.remove("animate-pulse");
+      streamingSpan.removeAttribute("data-processing");
+      
+      // Add action buttons after a brief delay
+      setTimeout(() => {
+        // Ensure we don't add duplicate boxes
+        if (!streamingSpan.querySelector(".inline-action-box")) {
+          const actionBox = document.createElement("div");
+          actionBox.className = "inline-action-box";
+          actionBox.innerHTML = `
+            <button class="accept-btn">✅ Accept</button>
+            <button class="reject-btn">❌ Reject</button>
+          `;
+          streamingSpan.appendChild(actionBox);
+        }
+      }, 200);
 
-      range.deleteContents();
-      const existingBoxes = editor.querySelectorAll(".inline-action-box");
-      existingBoxes.forEach(box => box.remove());
-      range.insertNode(fragment);
-
-      setReportText(editor.innerHTML);
+      // Update version history
       setVersionHistory(prev => [
         {
           timestamp: new Date().toLocaleString(),
-          summary: prompt,
+          summary: `Edit: ${prompt.substring(0, 30)}${prompt.length > 30 ? '...' : ''}`,
           content: editor.innerHTML,
         },
         ...prev,
       ]);
+    }
 
-      savedRangeRef.current = null;
-    } catch (err) {
-      console.error("Claude API failed", err);
+  } catch (err) {
+    console.error("💥 Edit streaming error:", err);
+    
+    const contentSpan = streamingSpan.querySelector('.streaming-content');
+    if (contentSpan) {
+      contentSpan.innerHTML = `<span class="text-red-600 font-medium">❌ Error: ${err instanceof Error ? err.message : 'Unknown error'}</span>`;
+    }
+    streamingSpan.classList.remove("animate-pulse");
+    streamingSpan.removeAttribute("data-processing");
+  } finally {
+    setIsEditStreaming(false);
+    setStreamingContainer(null);
+    savedRangeRef.current = null;
+  }
+};
+
+// Also update the click handler to properly handle the new structure
+useEffect(() => {
+  const editor = editorRef.current;
+  if (!editor) return;
+
+  const handleClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const container = target.closest(".inline-edit-suggestion") as HTMLElement;
+    if (!container) return;
+
+    // Handle Accept
+    if (target.classList.contains("accept-btn")) {
+      console.log("✅ Accepting edit");
+      
+      // Get the content from the streaming container
+      const contentSpan = container.querySelector('.streaming-content');
+      if (contentSpan) {
+        // Create a document fragment with the content
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = contentSpan.innerHTML;
+        
+        // Replace the container with the content
+        const fragment = document.createDocumentFragment();
+        while (tempDiv.firstChild) {
+          fragment.appendChild(tempDiv.firstChild);
+        }
+        container.replaceWith(fragment);
+      } else {
+        // Fallback: just remove the container styling
+        container.classList.remove("inline-edit-suggestion", "bg-yellow-100", "border-yellow-300");
+        const box = container.querySelector(".inline-action-box");
+        if (box) box.remove();
+        container.removeAttribute("data-original");
+      }
+      
+      setReportText(editor.innerHTML);
+      localStorage.setItem("labReport", editor.innerText);
+    }
+
+    // Handle Reject
+    if (target.classList.contains("reject-btn")) {
+      console.log("❌ Rejecting edit");
+      
+      const original = decodeURIComponent(container.dataset.original || "").trim();
+      
+      // Replace with original text
+      const textNode = document.createTextNode(original);
+      container.replaceWith(textNode);
+      
+      setReportText(editor.innerHTML);
+      localStorage.setItem("labReport", editor.innerText);
     }
   };
+
+const handleHover = (e: MouseEvent) => {
+    const container = (e.target as HTMLElement).closest(".inline-edit-suggestion") as HTMLElement;
+    if (!container || container.querySelector(".inline-action-box") || container.classList.contains("animate-pulse")) return;
+
+    const box = document.createElement("div");
+    box.className = "inline-action-box absolute left-0 top-full mt-1 bg-white border border-gray-300 text-sm px-2 py-1 rounded shadow-lg flex gap-2 z-50 whitespace-nowrap";
+    box.innerHTML = `
+      <button class="text-green-600 accept-btn hover:bg-green-50 px-2 py-1 rounded transition-colors font-medium">✅ Accept</button>
+      <button class="text-red-600 reject-btn hover:bg-red-50 px-2 py-1 rounded transition-colors font-medium">❌ Reject</button>
+    `;
+    container.appendChild(box);
+  };
+
+  document.addEventListener("click", handleClick);
+  editor.addEventListener("mouseover", handleHover);
+
+  return () => {
+    document.removeEventListener("click", handleClick);
+    editor.removeEventListener("mouseover", handleHover);
+  };
+}, []);
+
+// Add visual indicator for streaming in your JSX (add this near your editor)
+{isEditStreaming && (
+  <div className="fixed top-4 right-4 bg-blue-100 border border-blue-300 rounded-lg p-3 shadow-lg z-50">
+    <div className="flex items-center gap-2 text-blue-800">
+      <RefreshCw className="animate-spin" size={16} />
+      <span className="text-sm font-medium">Claude is rewriting...</span>
+    </div>
+  </div>
+)}
+
+
+
+// Update your existing click handler to work with the new streaming system
+useEffect(() => {
+  const editor = editorRef.current;
+  if (!editor) return;
+
+  const handleClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const container = target.closest(".inline-edit-suggestion") as HTMLElement;
+    if (!container) return;
+
+    // Handle Accept
+    if (target.classList.contains("accept-btn")) {
+      // Remove suggestion styling and action box
+      container.classList.remove("inline-edit-suggestion", "bg-yellow-100", "border-yellow-300", "animate-pulse");
+      const box = container.querySelector(".inline-action-box");
+      if (box) box.remove();
+      container.removeAttribute("data-original");
+      
+      // Clean up the content
+      const content = container.querySelector('.streaming-content');
+      if (content) {
+        const cleanDiv = document.createElement('div');
+        cleanDiv.innerHTML = content.innerHTML;
+        container.replaceWith(...Array.from(cleanDiv.childNodes));
+      }
+      
+      setReportText(editor.innerHTML);
+      localStorage.setItem("labReport", editor.innerText);
+    }
+
+    // Handle Reject
+    if (target.classList.contains("reject-btn")) {
+      const original = decodeURIComponent(container.dataset.original || "").trim();
+      
+      // Create text nodes for the original content
+      const textNode = document.createTextNode(original);
+      container.replaceWith(textNode);
+      
+      setReportText(editor.innerHTML);
+      localStorage.setItem("labReport", editor.innerText);
+    }
+  };
+
+  const handleHover = (e: MouseEvent) => {
+    const container = (e.target as HTMLElement).closest(".inline-edit-suggestion") as HTMLElement;
+    if (!container || container.querySelector(".inline-action-box") || container.classList.contains("animate-pulse")) return;
+
+    const box = document.createElement("div");
+    box.className = "inline-action-box absolute left-0 mt-1 bg-white border text-sm px-2 py-1 rounded shadow flex gap-2 z-50";
+    box.innerHTML = `
+      <button class="text-green-600 accept-btn hover:bg-green-50 px-2 py-1 rounded">✅ Accept</button>
+      <button class="text-red-600 reject-btn hover:bg-red-50 px-2 py-1 rounded">❌ Reject</button>
+    `;
+    container.appendChild(box);
+  };
+
+  document.addEventListener("click", handleClick);
+  editor.addEventListener("mouseover", handleHover);
+
+  return () => {
+    document.removeEventListener("click", handleClick);
+    editor.removeEventListener("mouseover", handleHover);
+  };
+}, []);
+
+// Add visual indicator for streaming in your JSX (add this near your editor)
+{isEditStreaming && (
+  <div className="fixed top-4 right-4 bg-blue-100 border border-blue-300 rounded-lg p-3 shadow-lg z-50">
+    <div className="flex items-center gap-2 text-blue-800">
+      <RefreshCw className="animate-spin" size={16} />
+      <span className="text-sm font-medium">Claude is rewriting...</span>
+    </div>
+  </div>
+)}
+
 
 
 
@@ -197,6 +654,13 @@ export default function ReportPage() {
   useEffect(() => {
     const storedReport = localStorage.getItem("labReport");
     const storedChart = localStorage.getItem("chartSpec");
+
+    const storedRubric = localStorage.getItem("rubricText");
+    const storedManual = localStorage.getItem("manualText");
+
+    if (storedRubric) setRubricText(storedRubric);
+    if (storedManual) setManualText(storedManual);
+
 
     if (storedReport && editorRef.current) {
       const parseAndSet = async () => {
@@ -228,9 +692,17 @@ export default function ReportPage() {
         currentChart = null;
       }
 
-      const labels = chartSpec.labels?.length
-        ? chartSpec.labels
-        : chartSpec.series?.[0]?.values.map((_, i) => i);
+      const labels =
+  Array.isArray(chartSpec.labels) && chartSpec.labels.length > 0
+    ? chartSpec.labels
+    : Array.isArray(chartSpec.series?.[0]?.values)
+      ? chartSpec.series[0].values.map((_, i) => i)
+      : [];
+
+if (chartSpec.graphType === "scatter" && !Array.isArray(chartSpec.labels)) {
+  console.warn("⚠️ Scatter graph expected labels[], but none were provided.");
+}
+
 
       const datasets = chartSpec.series.flatMap((s, i) => {
         const baseColor = `hsl(${i * 90}, 70%, 50%)`;
@@ -269,6 +741,7 @@ export default function ReportPage() {
 
         return [
           {
+            type: chartSpec.graphType,
             label: s.label,
             data: chartSpec.graphType === "scatter" ? pointData : s.values,
             borderWidth: 2,
@@ -285,9 +758,15 @@ export default function ReportPage() {
         options: {
           responsive: true,
           scales: {
-            x: { title: { display: true, text: chartSpec.xLabel } },
-            y: { title: { display: true, text: chartSpec.yLabel } },
-          },
+  x: {
+    type: chartSpec.graphType === "scatter" ? "linear" : "category",
+    title: { display: true, text: chartSpec.xLabel },
+  },
+  y: {
+    title: { display: true, text: chartSpec.yLabel },
+  },
+},
+
         },
       });
     }
@@ -449,12 +928,20 @@ export default function ReportPage() {
             />
           )}
 
-          <div className="mt-8">
-            <h2 className="text-lg font-semibold mb-2">Rubric Feedback</h2>
-            <div className="border border-gray-300 bg-gray-50 rounded-md p-4 text-sm">
-              Claude-generated feedback from rubric will appear here (based on manual).
-            </div>
-          </div>
+<div className="mt-8">
+  <h2 className="text-lg font-semibold mb-2">Rubric Feedback</h2>
+  
+  {isStreaming && (
+    <div className="flex items-center gap-2 text-blue-600 mb-2">
+      <RefreshCw className="animate-spin" size={16} />
+      Claude is analyzing your report...
+    </div>
+  )}
+  
+  <div className="border border-gray-300 bg-gray-50 rounded-md p-4 text-sm whitespace-pre-wrap">
+    {rubricFeedback || "Claude-generated feedback from rubric will appear here (based on manual)."}
+  </div>
+</div>
 
           <div className="mt-8">
             <h2 className="text-lg font-semibold mb-2">Version History</h2>
@@ -494,7 +981,7 @@ export default function ReportPage() {
             <button className="flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50">
               <PenLine size={16} className="text-green-600"/> Improve Academic Tone
             </button>
-            <button className="flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50">
+            <button onClick={handleCheckCompleteness} className="flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50">
               <ListChecks size={16} className="text-blue-600"/> Check for Completeness
             </button>
           </div>

@@ -22,37 +22,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   });
 
   try {
-    // Parse request body (same as rubric.ts)
+    // Parse request body
     const buffers = [];
     for await (const chunk of req) {
       buffers.push(chunk);
     }
     const raw = Buffer.concat(buffers).toString("utf8");
-    const { original, prompt, fullReport } = JSON.parse(raw);
+    const { reportText, rubricText, manualText } = JSON.parse(raw);
 
-    if (!original?.trim() || !prompt?.trim()) {
-      res.write(`data: ${JSON.stringify({ type: "error", error: "Missing original text or prompt" })}\n\n`);
+    if (!reportText?.trim()) {
+      res.write(`data: ${JSON.stringify({ type: "error", error: "Report text is required" })}\n\n`);
       res.end();
       return;
     }
 
-    const fullPrompt = `You are an AI assistant helping revise a lab report. Follow the user instruction precisely.
+    const prompt = `You are grading a university-level lab report using the provided rubric and manual.
 
-Instruction: ${prompt}
+For each section, use:
+- ✅ (complete and well-done)
+- ⚠️ (present but needs improvement) 
+- ❌ (missing or inadequate)
 
-Full Report (for context only):
-"""
-${fullReport}
-"""
+Evaluate these sections: Abstract, Introduction, Methods, Results, Discussion, References.
 
-Text to edit:
-"""
-${original}
-"""
+Give specific, actionable feedback for improvement.
 
-Rewrite ONLY the specified text passage according to the instruction. Return the revised text in plain markdown format without any JSON wrapper or additional formatting. Do not include a summary or explanation - just return the improved text directly.`;
+RUBRIC:
+${rubricText || "Standard academic lab report rubric"}
 
-    // Stream directly from Claude (same pattern as rubric.ts)
+MANUAL/INSTRUCTIONS:
+${manualText || "Standard lab report guidelines"}
+
+REPORT TO EVALUATE:
+${reportText}
+
+Provide clear, constructive feedback:`;
+
+    // Stream directly from Claude
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -63,8 +69,8 @@ Rewrite ONLY the specified text passage according to the instruction. Return the
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         stream: true,
-        max_tokens: 800,
-        messages: [{ role: "user", content: fullPrompt }]
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }]
       })
     });
 
@@ -89,7 +95,7 @@ Rewrite ONLY the specified text passage according to the instruction. Return the
           const trimmed = line.trim();
           if (!trimmed || !trimmed.startsWith('data: ')) continue;
           
-          // Forward the line directly to client (same as rubric.ts)
+          // Forward the line directly to client
           res.write(line + '\n');
           
           // Force immediate flush
