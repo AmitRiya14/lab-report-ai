@@ -11,6 +11,39 @@ export const config = {
   },
 };
 
+/**
+ * Strip markdown formatting from text for clean display
+ * Copied from report.tsx to maintain consistency
+ */
+function stripMarkdownSync(text: string): string {
+  return text
+    // Remove headers (# ## ### etc.)
+    .replace(/^#{1,6}\s+(.+)$/gm, '$1')
+    // Remove bold and italic formatting
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    // Remove code blocks and inline code
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`(.+?)`/g, '$1')
+    // Remove links [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Remove strikethrough
+    .replace(/~~(.+?)~~/g, '$1')
+    // Remove blockquotes
+    .replace(/^>\s+(.+)$/gm, '$1')
+    // Convert list markers to simple bullets
+    .replace(/^[\s]*[-*+]\s+(.+)$/gm, '• $1')
+    .replace(/^[\s]*\d+\.\s+(.+)$/gm, '$1')
+    // Remove table formatting
+    .replace(/\|/g, '')
+    .replace(/^[-\s:]+$/gm, '') // Remove table separator lines
+    // Clean up excessive whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // 🧠 Rubric generator using Claude
 async function generateRubricFromManual(manualText: string, rawData: string): Promise<string> {
   const prompt = `
@@ -44,7 +77,8 @@ ${rawData}
 
   const body = await response.text();
   const parsed = JSON.parse(body);
-  return parsed?.content?.[0]?.text?.trim() || "Rubric generation failed.";
+  const rawRubric = parsed?.content?.[0]?.text?.trim() || "Rubric generation failed.";
+  return stripMarkdownSync(rawRubric); // ✅ This strips the markdown
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

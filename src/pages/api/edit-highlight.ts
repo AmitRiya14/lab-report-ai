@@ -63,7 +63,7 @@ Rewrite ONLY the specified text passage according to the instruction. Return the
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         stream: true,
-        max_tokens: 800,
+        max_tokens: 6000,
         messages: [{ role: "user", content: fullPrompt }]
       })
     });
