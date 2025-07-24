@@ -40,9 +40,15 @@ import {
   Crown,
   CircleCheck,
   ChevronDown,
-  Target
+  Target, Copy, Check, Edit3, User,
 } from "lucide-react";
 import PromptPopover from "@/components/PromptModal";
+import { 
+  exportToWord, 
+  exportToAdvancedPDF 
+} from '@/utils/exportUtils';
+
+import { stripMarkdownSync } from '@/utils/textUtils';
 
 // Register Chart.js components
 Chart.register(...registerables);
@@ -86,31 +92,7 @@ type VersionHistoryEntry = {
  * @param text - Text containing markdown formatting
  * @returns Clean text without markdown formatting
  */
-function stripMarkdownSync(text: string): string {
-  return text
-    // Remove headers (# ## ### etc.)
-    .replace(/^#{1,6}\s+(.+)$/gm, '$1')
-    // Remove bold and italic formatting
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\*(.+?)\*/g, '$1')
-    .replace(/__(.+?)__/g, '$1')
-    .replace(/_(.+?)_/g, '$1')
-    // Remove code blocks and inline code
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`(.+?)`/g, '$1')
-    // Remove links [text](url) -> text
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // Remove strikethrough
-    .replace(/~~(.+?)~~/g, '$1')
-    // Remove blockquotes
-    .replace(/^>\s+(.+)$/gm, '$1')
-    // Convert list markers to simple bullets
-    .replace(/^[\s]*[-*+]\s+(.+)$/gm, '• $1')
-    .replace(/^[\s]*\d+\.\s+(.+)$/gm, '$1')
-    // Clean up excessive whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+
 
 // ========================================
 // MAIN COMPONENT
@@ -122,9 +104,12 @@ export default function ReportPage() {
   // ========================================
   
   // Basic report metadata
-  const [title, setTitle] = useState("Lab Report: Quantum Entanglement Experiment");
+  const [title, setTitle] = useState("Lab Report");  
   const [name, setName] = useState("Student Name");
   const [date, setDate] = useState(new Date().toLocaleDateString());
+  // Add these state variables to your component
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
   
   // Report content and data
   const [reportText, setReportText] = useState("");
@@ -174,6 +159,49 @@ export default function ReportPage() {
   // ========================================
   // CORE FUNCTIONALITY HANDLERS
   // ========================================
+
+
+  /**
+ * Copy report content to clipboard with clean formatting
+ */
+const handleCopyReport = async () => {
+  const editor = editorRef.current;
+  if (!editor) {
+    alert("No report content to copy");
+    return;
+  }
+
+  try {
+    // Get clean text content without edit suggestions
+    const cleanContent = editor.innerText || editor.textContent || "";
+    
+    // Create formatted text with title and student info
+    const fullReport = `${title}\n\nStudent: ${name}\nDate: ${date}\n\n${cleanContent}`;
+    
+    await navigator.clipboard.writeText(fullReport);
+    
+    // Show success feedback
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+    
+  } catch (error) {
+    console.error("Copy failed:", error);
+    alert("Failed to copy to clipboard. Please try again.");
+  }
+};
+
+/**
+ * Handle student name editing
+ */
+const handleNameEdit = () => {
+  setIsEditingName(true);
+};
+
+const handleNameSave = (newName: string) => {
+  setName(newName.trim() || "Student Name");
+  setIsEditingName(false);
+  localStorage.setItem("studentName", newName.trim() || "Student Name");
+};
 
   /**
    * Handle text selection and open editing modal
@@ -554,10 +582,29 @@ export default function ReportPage() {
    * 
    * @param format - Export format (PDF, DOCX, LaTeX, TXT)
    */
-  const handleExport = (format: string) => {
-    // TODO: Implement actual export functionality
-    alert(`Exporting as ${format} not implemented yet.`);
-  };
+  const handleExport = async (format: string) => {
+  const editor = editorRef.current;
+  if (!editor) {
+    alert("No report content to export");
+    return;
+  }
+
+  try {
+    switch (format) {
+      case "PDF":
+        await exportToAdvancedPDF(editor, title);
+        break;
+      case "DOCX":
+        await exportToWord(reportText, title, name, date);
+        break;
+      default:
+        alert(`Export format ${format} not implemented yet.`);
+    }
+  } catch (error) {
+    console.error("Export error:", error);
+    alert("Export failed. Please try again.");
+  }
+};
 
 
   /**
@@ -856,13 +903,17 @@ useEffect(() => {
   const storedRubric = localStorage.getItem("rubricText");
   const storedManual = localStorage.getItem("manualText");
   const storedAnalysis = localStorage.getItem("lastRubricAnalysis"); // ✅ NEW
+  const storedTitle = localStorage.getItem("reportTitle"); // 🎯 NEW: Load generated title
+  const savedName = localStorage.getItem("studentName"); // 🎯 NEW: Load saved name
 
   console.log("📋 Found data:", {
     report: storedReport ? "✅" : "❌",
     chart: storedChart ? "✅" : "❌",
     rubric: storedRubric ? "✅" : "❌",
     manual: storedManual ? "✅" : "❌",
-    analysis: storedAnalysis ? "✅" : "❌" // ✅ NEW
+    analysis: storedAnalysis ? "✅" : "❌", // ✅ NEW
+    title: storedTitle ? "✅" : "❌", // 🎯 NEW
+    name: savedName ? "✅" : "❌" // 🎯 NEW
   });
 
   if (!storedReport || storedReport.trim().length < 50) {
@@ -881,6 +932,14 @@ useEffect(() => {
   if (storedManual) setManualText(storedManual);
   if (storedAnalysis) {
     setRubricAnalysis(storedAnalysis); // ✅ Load previous analysis
+  }
+
+  // 🎯 NEW: Set title and name from localStorage
+  if (storedTitle) {
+    setTitle(storedTitle);
+  }
+  if (savedName) {
+    setName(savedName);
   }
 
     // Parse and set report content
@@ -1126,6 +1185,14 @@ useEffect(() => {
     }
   }, [isStreaming, rubricFeedback, cleanRubric]);
 
+
+  
+// ========================================
+// ALTERNATIVE VERSION: With more styling details
+// ========================================
+
+
+
   // ========================================
   // RENDER JSX
   // ========================================
@@ -1133,14 +1200,47 @@ useEffect(() => {
   return (
     <div className="flex flex-col min-h-screen font-sans text-gray-800">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white shadow-sm border-b">
-        <h1 className="text-xl font-bold text-cyan-600 flex items-center gap-2">
-          <Wand2 className="text-cyan-500" /> StudyLab AI
-        </h1>
-        <div className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs font-semibold border border-emerald-300">
-          <Crown size={14} className="inline mr-1 text-emerald-500" /> Pro Student
-        </div>
-      </header>
+<header className="flex items-center justify-between px-6 py-4 bg-white shadow-sm border-b border-gray-100">
+  {/* Left Side - Logo and Brand */}
+  <div className="flex items-center gap-3">
+    <div className="w-11 h-11 bg-gradient-to-br from-[#00e3ae] to-[#0090f1] rounded-xl flex items-center justify-center shadow-lg">
+      <Wand2 className="text-white" size={22} />
+    </div>
+    <div className="flex flex-col">
+      <h1 className="text-xl font-bold text-gray-800 leading-none">StudyLab AI</h1>
+      <span className="text-xs text-gray-500 leading-none mt-0.5">AI-Powered for Students</span>
+    </div>
+  </div>
+
+  {/* Center - Navigation Tabs */}
+  <div className="flex items-center bg-gray-50 rounded-xl p-1">
+    <button className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition-all rounded-lg hover:bg-white hover:shadow-sm">
+      Dashboard
+    </button>
+    <button className="px-5 py-2.5 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
+      Lab Report
+    </button>
+  </div>
+
+  {/* Right Side - Settings and User Profile */}
+  <div className="flex items-center gap-3">
+    {/* Settings Icon */}
+    <button className="p-2.5 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition-all hover:scale-105">
+      <Settings size={20} />
+    </button>
+    
+    {/* User Profile with Pro Badge */}
+    <div className="relative">
+      <div className="w-11 h-11 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border border-gray-200">
+        <User className="text-gray-600" size={22} />
+      </div>
+      {/* Pro Badge */}
+      <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white text-xs px-2.5 py-0.5 rounded-full font-semibold shadow-md">
+        Pro
+      </div>
+    </div>
+  </div>
+</header>
 
       <div className="flex flex-1">
         {/* Left Sidebar */}
@@ -1187,19 +1287,69 @@ useEffect(() => {
 
         {/* Main Content Area */}
         <main className="flex-1 bg-[#f9fdfc] p-6 overflow-y-auto">
-          {/* Report Header Section */}
           <div className="bg-white shadow rounded-xl p-6 mb-6">
-            <h2 className="text-xl font-semibold text-cyan-700">{title}</h2>
-            <p className="text-sm text-gray-500 mt-1">Name: {name} | Date: {date}</p>
-            <div className="mt-4 flex gap-2">
-              <button 
-                onClick={() => handleExport("PDF")}
-                className="flex items-center gap-1 text-sm px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50"
+            {/* Title Section - Now shows Claude-generated title from upload */}
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-cyan-700 mb-2">
+                  {title}
+                </h2>
+                
+                {/* Student Name - Editable */}
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <span>Name:</span>
+                  {isEditingName ? (
+                    <input
+                      type="text"
+                      defaultValue={name}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500"
+                      onBlur={(e) => handleNameSave(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleNameSave((e.target as HTMLInputElement).value);
+                        }
+                        if (e.key === 'Escape') {
+                          setIsEditingName(false);
+                        }
+                      }}
+                      autoFocus
+                    />
+                  ) : (
+                    <button
+                      onClick={handleNameEdit}
+                      className="flex items-center gap-1 text-cyan-600 hover:text-cyan-800 font-medium"
+                    >
+                      {name}
+                      <Edit3 size={12} />
+                    </button>
+                  )}
+                  <span className="mx-2">|</span>
+                  <span>Date: {date}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Copy Button */}
+            <div className="flex justify-start">
+              <button
+                onClick={handleCopyReport}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  copySuccess
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white hover:shadow-lg transform hover:scale-105'
+                }`}
               >
-                <ArrowDownToLine size={16} /> Export
-              </button>
-              <button className="flex items-center gap-1 text-sm px-3 py-1.5 rounded bg-emerald-500 text-white hover:bg-emerald-600">
-                ▶ Preview
+                {copySuccess ? (
+                  <>
+                    <Check size={16} />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={16} />
+                    Copy Report
+                  </>
+                )}
               </button>
             </div>
           </div>

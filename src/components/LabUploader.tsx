@@ -122,6 +122,16 @@ if (uploadData.rubric) {
   console.warn("⚠️ No rubric in upload response");
 }
 
+    // 🎯 NEW: Store the generated title from Claude
+    if (uploadData.title) {
+      localStorage.setItem("reportTitle", uploadData.title);
+      console.log("🎯 Title stored:", uploadData.title);
+    } else {
+      console.warn("⚠️ No title in upload response");
+      // Fallback: store a generic title
+      localStorage.setItem("reportTitle", "Lab Report");
+    }
+
       setMessage("✅ Report generated. Redirecting...");
       // ✅ ADD: Store successful navigation
     localStorage.setItem('lastSuccessfulPage', '/report');

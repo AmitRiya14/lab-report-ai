@@ -81,6 +81,52 @@ ${rawData}
   return stripMarkdownSync(rawRubric); // ✅ This strips the markdown
 }
 
+// 🎯 NEW: Title generator using Claude
+async function generateReportTitle(manualText: string, reportContent: string): Promise<string> {
+  const prompt = `You are an academic writing assistant. Based on the following lab report content, generate a clear, professional, and specific title that accurately reflects the experiment or research described.
+
+Requirements:
+- Format: "Lab Report: [Specific Experiment/Topic Name]"
+- Be specific about the actual experiment or topic
+- Use proper scientific terminology
+- Keep it concise but descriptive
+- Make it suitable for academic submission
+
+${manualText ? `Lab Manual Context:\n${manualText.substring(0, 500)}\n\n` : ''}
+
+Report Content:
+${reportContent.substring(0, 1500)}
+
+Generate only the title, nothing else:`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": process.env.CLAUDE_API_KEY!,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 100,
+      temperature: 0.3,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  const body = await response.text();
+  const parsed = JSON.parse(body);
+  const title = parsed?.content?.[0]?.text?.trim() || "Lab Report: Experiment Analysis";
+  
+  // Clean up the title and ensure proper format
+  let cleanTitle = title.replace(/^["']|["']$/g, ''); // Remove quotes
+  if (!cleanTitle.startsWith('Lab Report:')) {
+    cleanTitle = `Lab Report: ${cleanTitle}`;
+  }
+  
+  return cleanTitle;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const form = formidable({ multiples: true, keepExtensions: true });
 
@@ -138,6 +184,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: "Failed to generate report" });
     }
 
+    // 🎯 NEW: Generate intelligent title based on report content
+    const generatedTitle = await generateReportTitle(manualText, report);
+    console.log("🎯 Generated title:", generatedTitle);
+
     // Attempt to extract ChartSpec from report (if present)
     let extractedChartSpec = null;
     const chartJsonMatch = report?.match(/```json\s*([\s\S]*?)```/);
@@ -156,6 +206,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       labReport: cleanedReport,
       chartSpec: extractedChartSpec || chartSpec,
       rubric, // ✅ include rubric in response
+      title: generatedTitle, // 🎯 NEW: include generated title
     });
   });
 }

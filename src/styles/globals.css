@@ -199,3 +199,21 @@
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
+
+@layer components {
+  .nav-tab {
+    @apply px-5 py-2.5 font-medium transition-all duration-200 rounded-lg;
+  }
+  
+  .nav-tab-inactive {
+    @apply text-gray-600 hover:text-gray-800 hover:bg-white hover:shadow-sm;
+  }
+  
+  .nav-tab-active {
+    @apply bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white shadow-sm hover:shadow-md transform hover:scale-105;
+  }
+  
+  .icon-button {
+    @apply p-2.5 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-105;
+  }
+}
