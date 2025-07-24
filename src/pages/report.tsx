@@ -20,7 +20,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Chart as ChartJS, registerables, ChartDataset } from "chart.js";
 ChartJS.register(...registerables);
-const chartInstanceRef = useRef<ChartJS | null>(null);
 import { marked } from "marked";
 import { useRouter } from "next/navigation"; // ✅ ADD THIS IMPORT
 import {
@@ -146,6 +145,8 @@ const handleUploadNavigation = () => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [streamingContainer, setStreamingContainer] = useState<HTMLElement | null>(null);
   
+  const chartInstanceRef = useRef<ChartJS | null>(null);
+
   // Version history
   const [versionHistory, setVersionHistory] = useState<VersionHistoryEntry[]>([
     {
