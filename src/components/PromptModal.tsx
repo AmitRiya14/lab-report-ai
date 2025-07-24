@@ -69,7 +69,7 @@ export default function PromptPopover({
 
         {/* Preview of selected text */}
         <div className="bg-cyan-50 text-cyan-800 text-sm p-2 mb-3 rounded border border-cyan-100">
-          "{previewText}"
+          &ldquo;{previewText}&rdquo;
         </div>
 
         {/* Prompt input */}

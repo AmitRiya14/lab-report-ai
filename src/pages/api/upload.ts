@@ -3,7 +3,7 @@ import formidable from "formidable";
 import fs from "fs";
 import { parseLabManual } from "@/lib/parser";
 import { processExcelFile, ChartSpec } from "@/lib/excel";
-import { generateChartSpecFromManual, generateLabReport } from "@/lib/claude";
+import { generateLabReport } from "@/lib/claude";
 
 export const config = {
   api: {
