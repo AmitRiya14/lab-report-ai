@@ -81,18 +81,32 @@ export async function generateLabReport(
     throw new Error("Claude API key not configured");
   }
 
-  const fullPrompt = `You are a scientific writer. Your task is to write a complete, original lab report using the materials below.
+  const fullPrompt = `You are a scientific writer creating a comprehensive university-level lab report. 
 
-DO NOT reuse prior reports or invent generalized content. Base all sections strictly on the following lab manual and data.
+Generate a complete lab report with these sections:
+1. **Title** - Descriptive and scientific
+2. **Abstract** - 150-200 words summarizing experiment, methods, key findings
+3. **Introduction** - Background theory, relevant literature, clear hypothesis
+4. **Methods** - Detailed experimental procedure (reference lab manual)
+5. **Results** - Data presentation with figures/tables, statistical analysis, clear trends
+6. **Discussion** - Interpretation of results, comparison to literature, limitations
+7. **Conclusion** - Summary of key findings and implications
+8. **References** - Proper scientific citations
 
----
-📘 Lab Manual:
+Requirements:
+- Use formal academic language
+- Include specific data and measurements
+- Show statistical analysis (t-tests, p-values, error bars)
+- Reference relevant literature
+- Write 2000-3000 words total
+
+Lab Manual:
 ${manualText}
 
-📊 Raw Data:
+Experimental Data:
 ${rawDataSummary}
 
-✍️ Instructions: Generate a full lab report following these grading criteria and based solely on the material above.`;
+Generate a complete, professional lab report:`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

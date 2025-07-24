@@ -103,6 +103,17 @@ export default function ReportPage() {
   // STATE DECLARATIONS (organized by purpose)
   // ========================================
   
+
+  // Check if on report page to control navigation
+const isOnReportPage = true; // Since this is the report page
+
+/**
+ * Handle navigation to upload page
+ */
+const handleUploadNavigation = () => {
+  router.push("/"); // Navigate back to upload page
+};
+
   // Basic report metadata
   const [title, setTitle] = useState("Lab Report");  
   const [name, setName] = useState("Student Name");
@@ -925,13 +936,14 @@ useEffect(() => {
 
   // Set all data
   if (storedRubric) {
-    setRubricText(storedRubric);
-    // ✅ Set initial rubric feedback to show rubric is available
-    setRubricFeedback("📋 Rubric loaded! Click 'Check for Completeness' for detailed analysis.");
-  }
+  setRubricText(storedRubric);
+  // ✅ Set initial message instead of loading previous analysis
+  setRubricFeedback("📋 Rubric loaded! Click 'Check for Completeness' for detailed analysis.");
+  setRubricAnalysis(""); // ✅ Keep analysis blank until user clicks
+}
   if (storedManual) setManualText(storedManual);
   if (storedAnalysis) {
-    setRubricAnalysis(storedAnalysis); // ✅ Load previous analysis
+    
   }
 
   // 🎯 NEW: Set title and name from localStorage
@@ -1213,14 +1225,17 @@ useEffect(() => {
   </div>
 
   {/* Center - Navigation Tabs */}
-  <div className="flex items-center bg-gray-50 rounded-xl p-1">
-    <button className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition-all rounded-lg hover:bg-white hover:shadow-sm">
-      Dashboard
-    </button>
-    <button className="px-5 py-2.5 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
-      Lab Report
-    </button>
-  </div>
+<div className="flex items-center bg-gray-50 rounded-xl p-1">
+  <button 
+    onClick={handleUploadNavigation}
+    className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition-all rounded-lg hover:bg-white hover:shadow-sm"
+  >
+    Dashboard
+  </button>
+  <button className="px-5 py-2.5 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
+    Lab Report
+  </button>
+</div>
 
   {/* Right Side - Settings and User Profile */}
   <div className="flex items-center gap-3">
@@ -1246,18 +1261,21 @@ useEffect(() => {
         {/* Left Sidebar */}
         <aside className="w-64 bg-white border-r p-4 space-y-4 shadow-sm">
           <nav className="space-y-2">
-            <a href="#" className="flex items-center gap-3 text-gray-600 hover:text-cyan-600">
+            <button 
+              onClick={handleUploadNavigation}
+              className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors"
+            >
               <Upload size={16} /> Upload Files
-            </a>
-            <a href="#" className="flex items-center gap-3 text-white bg-gradient-to-r from-[#00e3ae] to-[#0090f1] rounded-full px-4 py-2 font-semibold">
+            </button>
+            <button className="flex items-center gap-3 text-white bg-gradient-to-r from-[#00e3ae] to-[#0090f1] rounded-xl px-4 py-2 font-semibold w-full text-left">
               <FileText size={16} /> Report Editing
-            </a>
-            <a href="#" className="flex items-center gap-3 text-gray-600 hover:text-cyan-600">
+            </button>
+            <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
               <Settings size={16} /> Settings
-            </a>
-            <a href="#" className="flex items-center gap-3 text-gray-600 hover:text-cyan-600">
+            </button>
+            <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
               <HelpCircle size={16} /> Help
-            </a>
+            </button>
           </nav>
 
           {/* Profile upgrade section */}
@@ -1397,98 +1415,94 @@ useEffect(() => {
           )}
 
           <div className="mt-8 space-y-6">
-  {/* Original Rubric Section */}
-  {rubricText && (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          📋 Grading Rubric
-          <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-            Generated from upload
-          </span>
-        </h2>
-        <button
-          onClick={() => setShowOriginalRubric(!showOriginalRubric)}
-          className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-        >
-          {showOriginalRubric ? "Hide Rubric" : "Show Rubric"}
-          <ChevronDown className={`transform transition-transform ${showOriginalRubric ? 'rotate-180' : ''}`} size={16} />
-        </button>
-      </div>
-      
-      {showOriginalRubric && (
-        <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 text-sm max-h-64 overflow-y-auto">
-          <div className="whitespace-pre-wrap font-mono text-blue-900">
-            {stripMarkdownSync(rubricText)}
-          </div>
-        </div>
-      )}
-    </div>
-  )}
-
-  {/* Claude Analysis Section */}
+  {/* Grading Rubric Section */}
+{rubricText && (
   <div>
     <div className="flex items-center justify-between mb-3">
       <h2 className="text-lg font-semibold flex items-center gap-2">
-        🤖 AI Report Analysis
-        {rubricAnalysis && (
-          <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-            Analysis complete
-          </span>
-        )}
+        📋 Grading Rubric
+        <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+          Points-based evaluation
+        </span>
       </h2>
-      
-      {!isStreaming && (
-        <button
-          onClick={handleCheckCompleteness}
-          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1"
-        >
-          <RefreshCw size={14} />
-          {rubricAnalysis ? 'Re-analyze' : 'Check Completeness'}
-        </button>
-      )}
+      <button
+        onClick={() => setShowOriginalRubric(!showOriginalRubric)}
+        className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+      >
+        {showOriginalRubric ? "Hide Rubric" : "Show Rubric"}
+        <ChevronDown className={`transform transition-transform ${showOriginalRubric ? 'rotate-180' : ''}`} size={16} />
+      </button>
     </div>
     
-    {isStreaming && (
-      <div className="flex items-center gap-2 text-blue-600 mb-3">
-        <RefreshCw className="animate-spin" size={16} />
-        Claude is analyzing your report against the rubric...
+    {showOriginalRubric && (
+      <div className="border border-gray-200 bg-gray-50 rounded-lg p-4 text-sm max-h-64 overflow-y-auto">
+        <div className="whitespace-pre-line text-gray-800 font-mono text-xs leading-relaxed">
+          {stripMarkdownSync(rubricText)}
+        </div>
       </div>
     )}
+  </div>
+)}
+
+{/* AI Report Analysis Section */}
+<div>
+  <div className="flex items-center justify-between mb-3">
+    <h2 className="text-lg font-semibold flex items-center gap-2">
+      🤖 AI Report Analysis
+      {rubricAnalysis && rubricAnalysis.trim() && (
+        <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+          Analysis complete
+        </span>
+      )}
+    </h2>
     
-    <div className="border border-gray-300 bg-white rounded-lg p-4 text-sm max-h-96 overflow-y-auto">
-      {rubricAnalysis ? (
-        <div className="whitespace-pre-wrap space-y-2">
-          {rubricAnalysis.split('\n').map((line, index) => {
-            // Add color coding for different feedback types
-            if (line.includes('✅') || line.includes('Excellent')) {
-              return <div key={index} className="text-green-700 font-medium">{line}</div>;
-            } else if (line.includes('⚠️') || line.includes('Consider')) {
-              return <div key={index} className="text-yellow-700">{line}</div>;
-            } else if (line.includes('❌') || line.includes('Missing')) {
-              return <div key={index} className="text-red-700 font-medium">{line}</div>;
-            } else {
-              return <div key={index} className="text-gray-700">{line}</div>;
-            }
-          })}
-        </div>
-      ) : (
-        <div className="text-gray-500 italic text-center py-8">
-          {rubricText 
+    <button
+      onClick={handleCheckCompleteness}
+      disabled={isStreaming}
+      className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50"
+    >
+      <RefreshCw size={14} className={isStreaming ? 'animate-spin' : ''} />
+      {isStreaming ? 'Analyzing...' : (rubricAnalysis ? 'Re-analyze' : 'Check Completeness')}
+    </button>
+  </div>
+  
+  <div className="border border-gray-300 bg-white rounded-lg p-4 text-sm max-h-96 overflow-y-auto">
+    {rubricAnalysis && rubricAnalysis.trim() ? (
+      <div className="whitespace-pre-wrap space-y-2">
+        {rubricAnalysis.split('\n').map((line, index) => {
+          if (line.includes('✅') || line.includes('Excellent')) {
+            return <div key={index} className="text-green-700 font-medium">{line}</div>;
+          } else if (line.includes('⚠️') || line.includes('Consider')) {
+            return <div key={index} className="text-yellow-700">{line}</div>;
+          } else if (line.includes('❌') || line.includes('Missing')) {
+            return <div key={index} className="text-red-700 font-medium">{line}</div>;
+          } else {
+            return <div key={index} className="text-gray-700">{line}</div>;
+          }
+        })}
+      </div>
+    ) : (
+      <div className="text-gray-500 italic text-center py-8">
+        {isStreaming ? (
+          <div className="flex items-center justify-center gap-2">
+            <RefreshCw className="animate-spin" size={16} />
+            Claude is analyzing your report against the rubric...
+          </div>
+        ) : (
+          rubricText 
             ? "Click 'Check Completeness' above to get detailed AI analysis of your report based on the rubric." 
             : "No rubric available. Upload files with grading criteria to see detailed feedback."
-          }
-        </div>
-      )}
-    </div>
-    
+        )}
+      </div>
+    )}
+  </div>
+</div>
     {rubricAnalysis && !isStreaming && (
       <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
         <span>💡 Analysis based on your uploaded rubric and lab manual</span>
         <span>Last updated: {new Date().toLocaleTimeString()}</span>
       </div>
     )}
-  </div>
 </div>
 
           {/* Version History Section */}

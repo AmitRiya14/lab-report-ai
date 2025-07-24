@@ -46,19 +46,31 @@ function stripMarkdownSync(text: string): string {
 
 // 🧠 Rubric generator using Claude
 async function generateRubricFromManual(manualText: string, rawData: string): Promise<string> {
-  const prompt = `
-You are an academic TA generating a grading rubric for a university-level lab report.
+  const prompt = `Create a point-based grading rubric for a university lab report. Format as a clean, structured list with specific requirements and point values.
 
-Use the structure of these reference rubrics (Lab 5 and Lab 7) to create expectations for each section: title, abstract, intro, methods, results, discussion, references, appendix.
+Based on this lab content, generate a rubric that lists:
+- Each required section (Title, Abstract, Introduction, etc.)
+- Specific requirements for each section
+- Point values that add up to 100 points total
 
-⚠️ Do NOT make it topic-specific. Create a general-purpose rubric based on this lab's structure and intent.
+Format example:
+**Title Page (5 points)**
+- Clear, descriptive title
+- Student name and ID
+- Date and lab section
 
---- LAB MANUAL ---
+**Abstract (15 points)**
+- Concise summary of experiment
+- Key findings mentioned
+- Word limit: 150-200 words
+
+LAB CONTENT:
 ${manualText}
 
---- RAW DATA SUMMARY ---
+DATA SUMMARY:
 ${rawData}
-`;
+
+Generate a clear, point-based rubric:`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
