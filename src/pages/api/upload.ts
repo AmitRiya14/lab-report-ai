@@ -176,8 +176,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (!manualText) return res.status(400).json({ error: "No lab manual provided" });
+    // ✅ WITH THIS:
     if (!chartSpec) {
-      chartSpec = await generateChartSpecFromManual(manualText);
+      console.log("No Excel data provided - report will be generated without charts");
+      chartSpec = null; // Explicitly set to null, no chart generation
     }
 
     console.log("Manual preview:", manualText.slice(0, 300));
@@ -207,7 +209,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try {
         extractedChartSpec = JSON.parse(chartJsonMatch[1]);
         console.log("✅ Extracted chartSpec from Claude response:", extractedChartSpec);
-      } catch (e) {
+      } catch {
         console.warn("⚠️ Failed to parse chartSpec from Claude");
       }
     }

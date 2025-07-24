@@ -3,7 +3,6 @@
 // Professional export functions for lab reports
 // ========================================
 
-import jsPDF from 'jspdf';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 
 /**
@@ -111,7 +110,7 @@ export const exportToWord = async (
 ): Promise<void> => {
   const cleanText = htmlToFormattedText(reportHtml);
   const sections = cleanText.split('\n\n');
-  
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const children: any[] = [];
   
   // Title page

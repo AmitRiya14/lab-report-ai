@@ -104,9 +104,6 @@ export default function ReportPage() {
   // ========================================
   
 
-  // Check if on report page to control navigation
-const isOnReportPage = true; // Since this is the report page
-
 /**
  * Handle navigation to upload page
  */
@@ -117,7 +114,7 @@ const handleUploadNavigation = () => {
   // Basic report metadata
   const [title, setTitle] = useState("Lab Report");  
   const [name, setName] = useState("Student Name");
-  const [date, setDate] = useState(new Date().toLocaleDateString());
+  const [date] = useState(new Date().toLocaleDateString());
   // Add these state variables to your component
   const [isEditingName, setIsEditingName] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -130,7 +127,7 @@ const handleUploadNavigation = () => {
   const [rubricFeedback, setRubricFeedback] = useState("");
   const [rubricText, setRubricText] = useState("");
   const [manualText, setManualText] = useState("");
-  const [cleanRubric, setCleanRubric] = useState("");
+  const [cleanRubric] = useState("");
   const [rubricAnalysis, setRubricAnalysis] = useState(""); // ✅ NEW: Separate state for Claude analysis
   const [showOriginalRubric, setShowOriginalRubric] = useState(true); // ✅ NEW: Toggle for original rubric
 
@@ -138,13 +135,16 @@ const handleUploadNavigation = () => {
   // Modal and text selection state
   const [modalOpen, setModalOpen] = useState(false);
   const [popoverAnchor, setPopoverAnchor] = useState<DOMRect | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedText, setSelectedText] = useState("");
   const [previewText, setPreviewText] = useState("");
   
   // Streaming and loading states
   const [isStreaming, setIsStreaming] = useState(false);
   const [isEditStreaming, setIsEditStreaming] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [streamingText, setStreamingText] = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [streamingContainer, setStreamingContainer] = useState<HTMLElement | null>(null);
   
   // Version history
@@ -288,7 +288,7 @@ const handleNameSave = (newName: string) => {
 
     // Step 3: Replace selected text with streaming container
     try {
-      const selectedFragment = range.extractContents();
+      range.extractContents(); // Just call it without storing
       range.insertNode(streamingSpan);
       window.getSelection()?.removeAllRanges(); // Clear selection
     } catch (error) {
@@ -395,7 +395,6 @@ const handleNameSave = (newName: string) => {
               // Step 9: Update display in real-time
               contentSpan.innerHTML = displayText || accumulatedText;
               contentSpan.className = 'streaming-content text-gray-800';
-              contentSpan.offsetHeight; // Force visual update
               setStreamingText(accumulatedText);
               
               // Controlled streaming speed for better UX
@@ -837,7 +836,7 @@ Use proper academic style and include detailed analysis.`;
     try {
       const chartData = JSON.parse(storedChart);
       regenerationPrompt += `\n\nData: ${chartData.graphType} chart with ${chartData.series?.length || 0} data series`;
-    } catch (e) {
+    } catch {
       console.warn("Could not parse chart data");
     }
   }
@@ -963,7 +962,7 @@ useEffect(() => {
             editorRef.current.innerHTML = parsed;
             setReportText(parsed);
           }
-        } catch (error) {
+        } catch {
           // ✅ ADD THIS: Redirect on parse error
           router.push("/error");
         }
@@ -999,9 +998,9 @@ useEffect(() => {
 
     // Destroy existing chart to prevent memory leaks
     if (chartInstanceRef.current) {
-      chartInstanceRef.current.destroy();
-      chartInstanceRef.current = null;
-    }
+    chartInstanceRef.current.destroy();
+    chartInstanceRef.current = null;
+  }
 
     // Generate chart labels
     const labels = Array.isArray(chartSpec.labels) && chartSpec.labels.length > 0
@@ -1021,7 +1020,7 @@ useEffect(() => {
       const pointData = labels.map((x, idx) => ({ x: Number(x), y: s.values[idx] }));
 
       const addTrendline = chartSpec.graphType === "scatter" && pointData.length > 1;
-      let trendlineDataset = [];
+      const trendlineDataset = [];
 
       // Calculate and add trendline for scatter plots
       if (addTrendline) {
@@ -1068,7 +1067,7 @@ useEffect(() => {
     // Create new chart instance
     chartInstanceRef.current = new Chart(ctx, {
       type: chartSpec.graphType,
-      data: { labels, datasets: datasets as any },
+      data: { labels, datasets: datasets as Chart.ChartDataset[] },
       options: {
         responsive: true,
         scales: {
@@ -1527,12 +1526,28 @@ useEffect(() => {
           </div>
 
           {/* Chart Visualization Section */}
-          {chartSpec && (
-            <div className="mt-12">
-              <h2 className="text-lg font-semibold mb-2">Graph</h2>
-              <canvas ref={chartRef} className="w-full max-w-3xl" height={300} />
-            </div>
-          )}
+          {/* Chart Visualization Section */}
+<div className="mt-12">
+  <h2 className="text-lg font-semibold mb-4">Data Visualization</h2>
+  
+  {chartSpec ? (
+    <canvas ref={chartRef} className="w-full max-w-3xl" height={300} />
+  ) : (
+    <div className="flex items-center justify-center py-12 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl">
+      <div className="text-center">
+        <div className="text-gray-400 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-medium text-gray-700 mb-2">No Raw Data Provided</h3>
+        <p className="text-gray-500 text-sm max-w-md">
+          Upload an Excel file (.xlsx) with your experimental data to generate charts and visualizations for your lab report.
+        </p>
+      </div>
+    </div>
+  )}
+</div>
         </main>
 
         {/* Right Sidebar */}

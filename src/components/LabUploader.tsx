@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useRef } from "react";
-import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
 import { useRouter } from "next/navigation";
 // Import the required icons from lucide-react for the header and new features
 import { 
@@ -164,15 +163,13 @@ export default function LabUploader() {
       }
 
       // Validate response data
-      if (!uploadData.labReport || !uploadData.chartSpec) {
-        console.error("Invalid response data:", uploadData);
-        setUploadProgress(0);
-        setProgressStatus("❌ Data processing failed");
-        // This is a data processing error
-        localStorage.setItem('lastError', 'parse');
-        router.push("/error?type=parse");
-        return;
-      }
+      // ✅ Or be more explicit about what's valid:
+if (!uploadData.labReport || uploadData.chartSpec === undefined) {
+  console.error("Invalid response data:", uploadData);
+  localStorage.setItem('lastError', 'parse');
+  router.push("/error?type=parse");
+  return;
+}
 
       // ✅ UPDATED: Validate data quality
       if (uploadData.labReport.length < 100) {
