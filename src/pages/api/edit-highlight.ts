@@ -92,9 +92,10 @@ Rewrite ONLY the specified text passage according to the instruction. Return the
           // Forward the line directly to client (same as rubric.ts)
           res.write(line + '\n');
           
-          // Force immediate flush
-          if (res.flush) {
-            res.flush();
+          // Force immediate flush - safely access the underlying Node.js response
+          const nodeRes = res as any;
+          if (typeof nodeRes.flush === 'function') {
+            nodeRes.flush();
           }
         }
       }
