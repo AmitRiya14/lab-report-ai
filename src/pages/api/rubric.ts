@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // Parse request body
-    const buffers = [];
+    const buffers: Buffer[] = [];
     for await (const chunk of req) {
       buffers.push(chunk);
     }
@@ -80,7 +80,13 @@ Provide clear, constructive feedback:`;
       return;
     }
 
-    const reader = claudeResponse.body!.getReader();
+    if (!claudeResponse.body) {
+      res.write(`data: ${JSON.stringify({ type: "error", error: "No response body from Claude API" })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const reader = claudeResponse.body.getReader();
     const decoder = new TextDecoder();
 
     try {
@@ -98,9 +104,10 @@ Provide clear, constructive feedback:`;
           // Forward the line directly to client
           res.write(line + '\n');
           
-          // Force immediate flush
-          if (res.flush) {
-            res.flush();
+          // Force immediate flush - safely access the underlying Node.js response
+          const nodeRes = res as NextApiResponse & { flush?: () => void };
+          if (nodeRes.flush) {
+            nodeRes.flush();
           }
         }
       }
