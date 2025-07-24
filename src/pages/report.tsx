@@ -18,7 +18,9 @@
  */
 
 import React, { useEffect, useRef, useState } from "react";
-import { Chart, registerables } from "chart.js";
+import { Chart as ChartJS, registerables, ChartDataset } from "chart.js";
+ChartJS.register(...registerables);
+const chartInstanceRef = useRef<ChartJS | null>(null);
 import { marked } from "marked";
 import { useRouter } from "next/navigation"; // ✅ ADD THIS IMPORT
 import {
@@ -49,9 +51,6 @@ import {
 } from '@/utils/exportUtils';
 
 import { stripMarkdownSync } from '@/utils/textUtils';
-
-// Register Chart.js components
-Chart.register(...registerables);
 
 // ========================================
 // TYPE DEFINITIONS
@@ -165,7 +164,6 @@ const handleUploadNavigation = () => {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
-  const chartInstanceRef = useRef<Chart | null>(null); // ✅ Fixed: Use ref instead of module variable
 
   // ========================================
   // CORE FUNCTIONALITY HANDLERS
@@ -445,7 +443,7 @@ const handleNameSave = (newName: string) => {
       if (err instanceof TypeError && err.message.includes('fetch')) {
         localStorage.setItem('lastError', 'network');
         router.push("/error?type=network");
-      } else if (err.name === 'AbortError') {
+      } else if (err instanceof Error && err.name === 'AbortError') {
         // Request cancelled - show in streaming container
         const contentSpan = streamingSpan.querySelector('.streaming-content');
         if (contentSpan) {
@@ -552,10 +550,11 @@ const handleNameSave = (newName: string) => {
   } catch (error) {
     console.error("💥 Rubric analysis error:", error);
 
+    // Fix: Proper error type checking
     if (error instanceof TypeError && error.message.includes('fetch')) {
       localStorage.setItem('lastError', 'network');
       router.push("/error?type=network");
-    } else if (error.name === 'AbortError') {
+    } else if (error instanceof Error && error.name === 'AbortError') {
       setRubricAnalysis("Analysis was cancelled.");
     } else {
       setRubricAnalysis(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -764,10 +763,11 @@ const streamReportRegeneration = async (prompt: string, actionType: 'regenerate'
   } catch (err) {
     console.error(`💥 ${actionType} streaming error:`, err);
     
+    // Fix: Proper error type checking
     if (err instanceof TypeError && err.message.includes('fetch')) {
       localStorage.setItem('lastError', 'network');
       router.push("/error?type=network");
-    } else if (err.name === 'AbortError') {
+    } else if (err instanceof Error && err.name === 'AbortError') {
       editor.innerHTML = `
         <div class="flex items-center justify-center py-12 text-gray-600">
           <div class="text-center">
@@ -1064,23 +1064,23 @@ useEffect(() => {
       ];
     });
 
-    // Create new chart instance
-    chartInstanceRef.current = new Chart(ctx, {
-      type: chartSpec.graphType,
-      data: { labels, datasets: datasets as Chart.ChartDataset[] },
-      options: {
-        responsive: true,
-        scales: {
-          x: {
-            type: chartSpec.graphType === "scatter" ? "linear" : "category",
-            title: { display: true, text: chartSpec.xLabel },
-          },
-          y: {
-            title: { display: true, text: chartSpec.yLabel },
-          },
+    // Create new chart instance - Fix: Use ChartJS constructor
+  chartInstanceRef.current = new ChartJS(ctx, {
+    type: chartSpec.graphType,
+    data: { labels, datasets: datasets as ChartDataset[] },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          type: chartSpec.graphType === "scatter" ? "linear" : "category",
+          title: { display: true, text: chartSpec.xLabel },
+        },
+        y: {
+          title: { display: true, text: chartSpec.yLabel },
         },
       },
-    });
+    },
+  });
 
     console.log("✅ Chart created successfully");
 
