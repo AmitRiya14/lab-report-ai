@@ -93,8 +93,8 @@ Rewrite ONLY the specified text passage according to the instruction. Return the
           res.write(line + '\n');
           
           // Force immediate flush - safely access the underlying Node.js response
-          const nodeRes = res as any;
-          if (typeof nodeRes.flush === 'function') {
+          const nodeRes = res as NextApiResponse & { flush?: () => void };
+          if (nodeRes.flush) {
             nodeRes.flush();
           }
         }
