@@ -217,3 +217,158 @@
     @apply p-2.5 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-105;
   }
 }
+
+/* Add these to your existing globals.css, after your current @layer components */
+
+@layer components {
+  /* Pricing card animations and effects */
+  .pricing-card {
+    @apply transition-all duration-300 ease-out;
+  }
+  
+  .pricing-card:hover {
+    @apply shadow-2xl -translate-y-1;
+  }
+  
+  .pricing-card-popular {
+    @apply transform scale-105 shadow-xl;
+  }
+  
+  .pricing-card-popular:hover {
+    @apply shadow-2xl scale-110;
+  }
+  
+  /* Gradient backgrounds for plan cards */
+  .plan-icon-free {
+    @apply bg-gradient-to-br from-gray-400 to-gray-500;
+  }
+  
+  .plan-icon-basic {
+    @apply bg-gradient-to-br from-blue-500 to-blue-600;
+  }
+  
+  .plan-icon-pro {
+    @apply bg-gradient-to-br from-[#00e3ae] to-[#0090f1];
+  }
+  
+  .plan-icon-plus {
+    @apply bg-gradient-to-br from-purple-500 to-purple-600;
+  }
+  
+  /* Button variations for each plan */
+  .btn-free {
+    @apply bg-gray-600 hover:bg-gray-700 text-white transform hover:scale-105 transition-all duration-200;
+  }
+  
+  .btn-basic {
+    @apply bg-blue-600 hover:bg-blue-700 text-white transform hover:scale-105 transition-all duration-200;
+  }
+  
+  .btn-pro {
+    @apply bg-gradient-to-r from-[#00e3ae] to-[#0090f1] hover:from-[#00d49a] hover:to-[#007fd8] text-white transform hover:scale-105 transition-all duration-200;
+  }
+  
+  .btn-plus {
+    @apply bg-purple-600 hover:bg-purple-700 text-white transform hover:scale-105 transition-all duration-200;
+  }
+  
+  /* FAQ accordion animations */
+  .faq-item {
+    @apply transition-all duration-200 ease-in-out;
+  }
+  
+  .faq-content {
+    @apply transition-all duration-300 ease-in-out overflow-hidden;
+  }
+  
+  /* Sparkle animation for popular badge */
+  .sparkle-badge {
+    @apply animate-pulse;
+  }
+  
+  /* Trust indicator hover effects */
+  .trust-indicator {
+    @apply transition-all duration-300 hover:scale-105;
+  }
+  
+  /* Final CTA section animation */
+  .final-cta {
+    @apply transition-all duration-300 hover:shadow-2xl;
+  }
+  
+  .final-cta button {
+    @apply transform hover:scale-105 transition-all duration-200;
+  }
+}
+
+/* Custom animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
+  background-size: 200px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Popular plan ring effect */
+.popular-ring {
+  @apply ring-4 ring-[#00e3ae]/20;
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 227, 174, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(0, 227, 174, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 227, 174, 0);
+  }
+}
+
+/* Smooth scroll behavior for FAQ section */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Mobile responsiveness improvements */
+@media (max-width: 768px) {
+  .pricing-card-popular {
+    @apply scale-100;
+  }
+  
+  .pricing-card-popular:hover {
+    @apply scale-105;
+  }
+}
+
+/* Add to globals.css */
+.nav-tab {
+  @apply px-4 py-2 rounded-lg text-sm font-medium transition-colors;
+}
+
+.nav-tab-active {
+  @apply bg-white text-[#0090f1] shadow-sm;
+}
+
+.nav-tab-inactive {
+  @apply text-gray-600 hover:text-gray-800;
+}
+
+.icon-button {
+  @apply p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors;
+}

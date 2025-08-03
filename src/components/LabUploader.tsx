@@ -1,6 +1,7 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Layout } from "@/components/Layout";
 // Import the required icons from lucide-react for the header and new features
 import { 
   Wand2, 
@@ -13,6 +14,7 @@ import {
   Zap,
   ChevronDown
 } from "lucide-react";
+import { AlertTriangle, TrendingUp } from "lucide-react";
 
 /**
  * LabUploader Component
@@ -38,6 +40,11 @@ export default function LabUploader() {
   const [progressStatus, setProgressStatus] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // Get user info for layout
+  const userTier = 'Free'; // This would come from your user context/state
+  const usageInfo = { current: 2, limit: 3 }; // This would come from your usage tracking
+
 
   /**
    * Handle file selection from input element
@@ -103,9 +110,132 @@ export default function LabUploader() {
     return interval;
   };
 
-  /**
+
+// Add this component inside your LabUploader component (before the return statement)
+const UsageDisplay = () => {
+  const [usage, setUsage] = useState<any>(null);
+  
+  useEffect(() => {
+    const getCurrentUsage = () => {
+      try {
+        const usageData = localStorage.getItem('currentUsage');
+        return usageData ? JSON.parse(usageData) : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const currentUsage = getCurrentUsage();
+    setUsage(currentUsage);
+
+    // Listen for usage updates
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'currentUsage') {
+        const newUsage = e.newValue ? JSON.parse(e.newValue) : null;
+        setUsage(newUsage);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  if (!usage) return null;
+
+  const percentage = Math.min(100, (usage.current / usage.limit) * 100);
+  const isNearLimit = percentage >= 80;
+  const isAtLimit = usage.current >= usage.limit;
+  const isUnlimited = usage.limit === 999;
+
+  if (isUnlimited) return null; // Don't show for unlimited plans
+
+  return (
+    <div className={`rounded-xl p-4 border mb-6 ${
+      isAtLimit ? 'bg-red-50 border-red-200' : 
+      isNearLimit ? 'bg-amber-50 border-amber-200' : 
+      'bg-green-50 border-green-200'
+    }`}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-sm text-gray-800 flex items-center gap-2">
+          <TrendingUp size={16} />
+          Monthly Usage ({usage.tier} Plan)
+        </h3>
+        {isAtLimit && (
+          <button
+            onClick={() => router.push('/pricing')}
+            className="text-xs bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white px-3 py-1.5 rounded-full hover:shadow-md transition-all font-semibold"
+          >
+            Upgrade Now
+          </button>
+        )}
+      </div>
+      
+      <div className="flex items-center justify-between text-sm mb-3">
+        <span className="text-gray-600">
+          Reports: {usage.current}/{usage.limit}
+        </span>
+        <span className={`font-semibold ${
+          isAtLimit ? 'text-red-600' : 
+          isNearLimit ? 'text-amber-600' : 
+          'text-green-600'
+        }`}>
+          {usage.limit - usage.current} remaining
+        </span>
+      </div>
+      
+      <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden mb-3">
+        <div 
+          className={`h-2 rounded-full transition-all duration-300 ${
+            isAtLimit ? 'bg-red-500' : 
+            isNearLimit ? 'bg-amber-500' : 
+            'bg-green-500'
+          }`}
+          style={{ width: `${percentage}%` }}
+        ></div>
+      </div>
+      
+      {isAtLimit ? (
+        <div className="flex items-start gap-2 bg-red-100 p-3 rounded-lg">
+          <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-red-700 font-medium mb-2">
+              You've reached your monthly limit of {usage.limit} reports!
+            </p>
+            <button
+              onClick={() => router.push('/pricing')}
+              className="w-full bg-red-500 text-white text-sm font-semibold py-2 rounded-lg hover:bg-red-600 transition-colors"
+            >
+              Upgrade to Continue Generating Reports
+            </button>
+          </div>
+        </div>
+      ) : isNearLimit ? (
+        <div className="flex items-start gap-2 bg-amber-100 p-3 rounded-lg">
+          <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-amber-700 mb-2">
+              You're close to your monthly limit. Consider upgrading for unlimited access.
+            </p>
+            <button
+              onClick={() => router.push('/pricing')}
+              className="w-full bg-amber-500 text-white text-sm font-semibold py-2 rounded-lg hover:bg-amber-600 transition-colors"
+            >
+              View Upgrade Options
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 bg-green-100 p-2 rounded text-center">
+          🎉 You have {usage.limit - usage.current} reports remaining this month
+        </p>
+      )}
+    </div>
+  );
+};
+
+/**
    * Submit files to API and handle response
-   * Stores generated report and chart data in localStorage
+   * Enhanced with usage limit detection and proper error routing
    */
   const handleSubmit = async () => {
     if (!files || files.length === 0) return;
@@ -118,7 +248,7 @@ export default function LabUploader() {
     // Start progress simulation with estimated API duration
     const progressInterval = simulateProgress(12000); // 12 seconds estimated
 
-    // ✅ ADD: Store current page as last successful page
+    // Store current page as last successful page
     localStorage.setItem('lastSuccessfulPage', '/');
 
     // Prepare form data for multipart upload
@@ -134,44 +264,92 @@ export default function LabUploader() {
         body: formData,
       });
 
-      const uploadData = await uploadRes.json();
-      console.log("Upload response:", uploadData);
-
-      // Clear progress interval and set completion
+      // Clear progress interval and handle response
       clearInterval(progressInterval);
-      setUploadProgress(100);
-      setProgressStatus("✅ Report generation complete!");
 
-      // ✅ ADD THIS: Check for API errors first
+      // Handle specific error responses
       if (!uploadRes.ok) {
-        console.error("Upload API error:", uploadData);
+        const errorData = await uploadRes.json().catch(() => ({}));
+        console.error("Upload API error:", uploadRes.status, errorData);
+        
         setUploadProgress(0);
         setProgressStatus("❌ Upload failed");
-        // Determine error type based on status code
-        if (uploadRes.status >= 500) {
-          // Server error
-          router.push("/error?type=server");
-        } else if (uploadRes.status === 413) {
-          // File too large
+        
+        // Handle usage limit specifically
+        if (uploadRes.status === 429 && errorData.error === 'Usage limit exceeded') {
+          // Store usage info in localStorage for the error page
+          if (errorData.usage) {
+            localStorage.setItem('lastUsageInfo', JSON.stringify(errorData.usage));
+          }
+          localStorage.setItem('lastError', 'usage_limit');
+          
+          // Show specific message for usage limit
+          setProgressStatus("❌ Monthly report limit reached");
+          setMessage("Redirecting to upgrade options...");
+          
+          // Redirect to error page with usage_limit type
+          setTimeout(() => {
+            router.push('/error?type=usage_limit');
+          }, 2000);
+          return;
+        }
+        
+        // Handle authentication errors
+        if (uploadRes.status === 401) {
+          localStorage.setItem('lastError', 'auth');
+          setProgressStatus("❌ Authentication required");
+          router.push('/error?type=auth');
+          return;
+        }
+        
+        // Handle file size errors
+        if (uploadRes.status === 413) {
+          setProgressStatus("❌ Files too large");
           alert("Files are too large. Please ensure total size is under 20MB.");
           return;
-        } else {
-          // Other API error
-          router.push("/error?type=unknown");
         }
+        
+        // Handle server errors (5xx)
+        if (uploadRes.status >= 500) {
+          localStorage.setItem('lastError', 'server');
+          setProgressStatus("❌ Server error");
+          router.push("/error?type=server");
+          return;
+        }
+        
+        // Handle other client errors (4xx)
+        if (uploadRes.status >= 400) {
+          localStorage.setItem('lastError', 'data');
+          setProgressStatus("❌ Processing error");
+          router.push("/error?type=data");
+          return;
+        }
+        
+        // Generic error fallback
+        localStorage.setItem('lastError', 'unknown');
+        setProgressStatus("❌ Unknown error");
+        router.push("/error?type=unknown");
         return;
       }
 
-      // Validate response data
-      // ✅ Or be more explicit about what's valid:
-if (!uploadData.labReport || uploadData.chartSpec === undefined) {
-  console.error("Invalid response data:", uploadData);
-  localStorage.setItem('lastError', 'parse');
-  router.push("/error?type=parse");
-  return;
-}
+      // Parse successful response
+      const uploadData = await uploadRes.json();
+      console.log("Upload response:", uploadData);
 
-      // ✅ UPDATED: Validate data quality
+      setUploadProgress(100);
+      setProgressStatus("✅ Report generation complete!");
+
+      // Validate response data
+      if (!uploadData.labReport || uploadData.chartSpec === undefined) {
+        console.error("Invalid response data:", uploadData);
+        setUploadProgress(0);
+        setProgressStatus("❌ Invalid response data");
+        localStorage.setItem('lastError', 'parse');
+        router.push("/error?type=parse");
+        return;
+      }
+
+      // Validate data quality
       if (uploadData.labReport.length < 100) {
         console.error("Generated report too short:", uploadData.labReport);
         setUploadProgress(0);
@@ -185,7 +363,7 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
       localStorage.setItem("labReport", uploadData.labReport);
       localStorage.setItem("chartSpec", JSON.stringify(uploadData.chartSpec));
 
-      // ✅ ADD THESE LINES RIGHT AFTER:
+      // Store rubric if provided
       if (uploadData.rubric) {
         localStorage.setItem("rubricText", uploadData.rubric);
         console.log("✅ Rubric stored:", uploadData.rubric.substring(0, 100) + "...");
@@ -193,14 +371,19 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
         console.warn("⚠️ No rubric in upload response");
       }
 
-      // 🎯 NEW: Store the generated title from Claude
+      // Store the generated title from Claude
       if (uploadData.title) {
         localStorage.setItem("reportTitle", uploadData.title);
         console.log("🎯 Title stored:", uploadData.title);
       } else {
         console.warn("⚠️ No title in upload response");
-        // Fallback: store a generic title
         localStorage.setItem("reportTitle", "Lab Report");
+      }
+
+      // Store usage info for display throughout the app
+      if (uploadData.usage) {
+        localStorage.setItem('currentUsage', JSON.stringify(uploadData.usage));
+        console.log("📊 Usage updated:", uploadData.usage);
       }
 
       // Mark that user has successfully generated a report
@@ -208,7 +391,7 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
       
       setMessage("Redirecting to your report...");
       
-      // ✅ ADD: Store successful navigation
+      // Store successful navigation
       localStorage.setItem('lastSuccessfulPage', '/report');
       
       // Redirect after brief delay to show completion
@@ -222,19 +405,28 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
       setUploadProgress(0);
       setProgressStatus("❌ Network error occurred");
       
-      // ✅ UPDATED: Determine error type
+      // Determine error type and route appropriately
       if (error instanceof TypeError && error.message.includes('fetch')) {
         // Network error - can't reach server
         localStorage.setItem('lastError', 'network');
-        router.push("/error?type=network");
+        setMessage("Network connection failed. Redirecting...");
+        setTimeout(() => {
+          router.push("/error?type=network");
+        }, 2000);
       } else if (error instanceof SyntaxError) {
         // JSON parsing error - server returned invalid data
         localStorage.setItem('lastError', 'server');
-        router.push("/error?type=server");
+        setMessage("Server returned invalid data. Redirecting...");
+        setTimeout(() => {
+          router.push("/error?type=server");
+        }, 2000);
       } else {
         // Unknown error
         localStorage.setItem('lastError', 'unknown');
-        router.push("/error?type=unknown");
+        setMessage("An unexpected error occurred. Redirecting...");
+        setTimeout(() => {
+          router.push("/error?type=unknown");
+        }, 2000);
       }
     } finally {
       setUploading(false);
@@ -262,116 +454,17 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
     { id: "3", name: "Lab 4", active: false },
   ];
 
-  return (
-    <div className="flex flex-col min-h-screen font-sans text-gray-800">
-      {/* Header - Copied exactly from report.tsx */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white shadow-sm border-b border-gray-100">
-        {/* Left Side - Logo and Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-gradient-to-br from-[#00e3ae] to-[#0090f1] rounded-xl flex items-center justify-center shadow-lg">
-            <Wand2 className="text-white" size={22} />
-          </div>
-          <div className="flex flex-col">
-            <h1 className="text-xl font-bold text-gray-800 leading-none">StudyLab AI</h1>
-            <span className="text-xs text-gray-500 leading-none mt-0.5">AI-Powered for Students</span>
-          </div>
-        </div>
-
-        {/* Center - Navigation Tabs */}
-        <div className="flex items-center bg-gray-50 rounded-xl p-1">
-          <button className="px-5 py-2.5 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
-            Dashboard
-          </button>
-          <button 
-            onClick={handleReportNavigation}
-            className={`px-5 py-2.5 font-medium transition-all rounded-lg ${
-              hasGeneratedReport
-                ? 'text-gray-600 hover:text-gray-800 hover:bg-white hover:shadow-sm'
-                : 'text-gray-400 cursor-not-allowed'
-            }`}
-            disabled={!hasGeneratedReport}
-          >
-            Lab Report
-          </button>
-        </div>
-
-        {/* Right Side - Settings and User Profile */}
-        <div className="flex items-center gap-3">
-          {/* Settings Icon */}
-          <button className="p-2.5 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition-all hover:scale-105">
-            <Settings size={20} />
-          </button>
-          
-          {/* User Profile with Pro Badge */}
-          <div className="relative">
-            <div className="w-11 h-11 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border border-gray-200">
-              <User className="text-gray-600" size={22} />
-            </div>
-            {/* Pro Badge */}
-            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white text-xs px-2.5 py-0.5 rounded-full font-semibold shadow-md">
-              Pro
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex flex-1">
-        {/* Left Sidebar */}
-        <aside className="w-64 bg-white border-r p-4 space-y-4 shadow-sm">
-          <nav className="space-y-2">
-            <button className="flex items-center gap-3 text-white bg-gradient-to-r from-[#00e3ae] to-[#0090f1] rounded-xl px-4 py-2 font-semibold w-full text-left">
-              <Upload size={16} /> Upload Files
-            </button>
-            <button 
-              onClick={handleReportNavigation}
-              className={`flex items-center gap-3 rounded-xl px-4 py-2 w-full text-left transition-colors ${
-                hasGeneratedReport 
-                  ? 'text-gray-600 hover:text-cyan-600 hover:bg-gray-50' 
-                  : 'text-gray-400 cursor-not-allowed'
-              }`}
-              disabled={!hasGeneratedReport}
-            >
-              <FileText size={16} /> Report Editing
-            </button>
-            <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
-              <Settings size={16} /> Settings
-            </button>
-            <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
-              <HelpCircle size={16} /> Help
-            </button>
-          </nav>
-
-          {/* Previous Lab Reports */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700">Previous Reports</h3>
-            <div className="space-y-2">
-              {previousReports.map((report) => (
-                <button
-                  key={report.id}
-                  className="w-full text-left px-3 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-700 transition-colors"
-                >
-                  {report.id} {report.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Profile upgrade section - Copied from report.tsx */}
-          <div className="bg-gradient-to-br from-[#00e3ae] to-[#0090f1] text-white rounded-xl p-4 shadow-md">
-            <div className="flex items-center gap-2 font-semibold mb-1">
-              <Crown size={18} /> My Profile
-            </div>
-            <p className="text-xs text-white/80">Student Premium</p>
-            <button className="mt-3 w-full bg-white text-[#0090f1] text-sm font-semibold py-1 rounded-md shadow-sm hover:bg-blue-50">
-              Upgrade Now
-            </button>
-            <p className="mt-1 text-xs underline text-white/80 cursor-pointer">Learn More</p>
-          </div>
-        </aside>
-
+  return (        
+      <Layout 
+    currentPage="dashboard" 
+    userTier={userTier} 
+    usageInfo={usageInfo}
+  >
         {/* Main Content - Updated layout */}
         <div className="flex-1 bg-[#f9fdfc] p-6 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
+            {/* ADD THIS: Usage Display Card - shows before upload card */}
+            <UsageDisplay />
             {/* Upload Card */}
             <div className="bg-white shadow rounded-xl p-8 mb-6">
               {/* Upload Area */}
@@ -520,7 +613,6 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
             </div>
           </div>
         </div>
-      </div>
 
       {/* Custom CSS for floating animation */}
       <style jsx>{`
@@ -533,6 +625,6 @@ if (!uploadData.labReport || uploadData.chartSpec === undefined) {
           animation: float 3s ease-in-out infinite;
         }
       `}</style>
-    </div>
+    </Layout>
   );
 }

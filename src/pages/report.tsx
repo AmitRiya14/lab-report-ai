@@ -21,6 +21,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Chart as ChartJS, registerables, ChartDataset } from "chart.js";
 ChartJS.register(...registerables);
 import { marked } from "marked";
+import { Layout } from "@/components/Layout";
 import { useRouter } from "next/navigation"; // ✅ ADD THIS IMPORT
 import {
   Upload,
@@ -108,6 +109,11 @@ export default function ReportPage() {
 const handleUploadNavigation = () => {
   router.push("/"); // Navigate back to upload page
 };
+
+// Get user info for layout
+  const userTier = 'Pro'; // This would come from your user context/state
+  const usageInfo = { current: 15, limit: 50 }; // This would come from your usage tracking
+
 
   // Basic report metadata
   const [title, setTitle] = useState("Lab Report");  
@@ -1210,101 +1216,15 @@ useEffect(() => {
   // ========================================
 
   return (
-    <div className="flex flex-col min-h-screen font-sans text-gray-800">
-      {/* Header */}
-<header className="flex items-center justify-between px-6 py-4 bg-white shadow-sm border-b border-gray-100">
-  {/* Left Side - Logo and Brand */}
-  <div className="flex items-center gap-3">
-    <div className="w-11 h-11 bg-gradient-to-br from-[#00e3ae] to-[#0090f1] rounded-xl flex items-center justify-center shadow-lg">
-      <Wand2 className="text-white" size={22} />
-    </div>
-    <div className="flex flex-col">
-      <h1 className="text-xl font-bold text-gray-800 leading-none">StudyLab AI</h1>
-      <span className="text-xs text-gray-500 leading-none mt-0.5">AI-Powered for Students</span>
-    </div>
-  </div>
-
-  {/* Center - Navigation Tabs */}
-<div className="flex items-center bg-gray-50 rounded-xl p-1">
-  <button 
-    onClick={handleUploadNavigation}
-    className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition-all rounded-lg hover:bg-white hover:shadow-sm"
+    <Layout 
+    currentPage="report" 
+    userTier={userTier} 
+    usageInfo={usageInfo}
+    showHowToEdit={true}  // This adds the "How to Edit" box to left sidebar
   >
-    Dashboard
-  </button>
-  <button className="px-5 py-2.5 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
-    Lab Report
-  </button>
-</div>
-
-  {/* Right Side - Settings and User Profile */}
-  <div className="flex items-center gap-3">
-    {/* Settings Icon */}
-    <button className="p-2.5 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition-all hover:scale-105">
-      <Settings size={20} />
-    </button>
-    
-    {/* User Profile with Pro Badge */}
-    <div className="relative">
-      <div className="w-11 h-11 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border border-gray-200">
-        <User className="text-gray-600" size={22} />
-      </div>
-      {/* Pro Badge */}
-      <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-[#00e3ae] to-[#0090f1] text-white text-xs px-2.5 py-0.5 rounded-full font-semibold shadow-md">
-        Pro
-      </div>
-    </div>
-  </div>
-</header>
-
-      <div className="flex flex-1">
-        {/* Left Sidebar */}
-        <aside className="w-64 bg-white border-r p-4 space-y-4 shadow-sm">
-          <nav className="space-y-2">
-            <button 
-              onClick={handleUploadNavigation}
-              className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors"
-            >
-              <Upload size={16} /> Upload Files
-            </button>
-            <button className="flex items-center gap-3 text-white bg-gradient-to-r from-[#00e3ae] to-[#0090f1] rounded-xl px-4 py-2 font-semibold w-full text-left">
-              <FileText size={16} /> Report Editing
-            </button>
-            <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
-              <Settings size={16} /> Settings
-            </button>
-            <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
-              <HelpCircle size={16} /> Help
-            </button>
-          </nav>
-
-          {/* Profile upgrade section */}
-          <div className="bg-gradient-to-br from-[#00e3ae] to-[#0090f1] text-white rounded-xl p-4 shadow-md">
-            <div className="flex items-center gap-2 font-semibold mb-1">
-              <Crown size={18} /> My Profile
-            </div>
-            <p className="text-xs text-white/80">Student Premium</p>
-            <button className="mt-3 w-full bg-white text-[#0090f1] text-sm font-semibold py-1 rounded-md shadow-sm hover:bg-blue-50">
-              Upgrade Now
-            </button>
-            <p className="mt-1 text-xs underline text-white/80 cursor-pointer">Learn More</p>
-          </div>
-
-          {/* How to edit instructions */}
-          <div className="bg-white rounded-xl p-4 shadow border border-gray-200">
-            <div className="flex items-center gap-2 mb-2 text-sm font-semibold">
-              <MousePointerClick size={16} /> How to Edit
-            </div>
-            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-              <li>Highlight any text in the report</li>
-              <li>Type your modification prompt</li>
-              <li>AI will update that section</li>
-            </ul>
-          </div>
-        </aside>
-
-        {/* Main Content Area */}
-        <main className="flex-1 bg-[#f9fdfc] p-6 overflow-y-auto">
+    {/* Main Content Area */}
+    <div className="flex flex-1">
+        <div className="flex-1 bg-[#f9fdfc] p-6 overflow-y-auto">
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             {/* Title Section - Now shows Claude-generated title from upload */}
             <div className="flex items-start justify-between mb-4">
@@ -1549,7 +1469,7 @@ useEffect(() => {
     </div>
   )}
 </div>
-        </main>
+        </div>
 
         {/* Right Sidebar */}
         <aside className="w-72 p-4 border-l bg-white space-y-4 shadow-sm">
@@ -1666,7 +1586,8 @@ useEffect(() => {
             </ul>
           </div>
         </aside>
-      </div>
-    </div>
+        </div>
+  </Layout>
   );
 }
+
