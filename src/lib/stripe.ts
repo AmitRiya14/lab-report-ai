@@ -21,21 +21,21 @@ export const getStripe = () => {
 export const STRIPE_PLANS = {
   basic: {
     name: 'Basic',
-    priceId: 'price_basic_monthly', // You'll get this from Stripe dashboard
+    priceId: process.env.STRIPE_PRICE_BASIC!, // You'll get this from Stripe dashboard
     price: 999, // $9.99 in cents
     reports: 15,
     features: ['15 reports/month', 'PDF export', 'Email support']
   },
   pro: {
     name: 'Pro',
-    priceId: 'price_pro_monthly', // You'll get this from Stripe dashboard
+    priceId: process.env.STRIPE_PRICE_PRO!, // You'll get this from Stripe dashboard
     price: 1999, // $19.99 in cents
     reports: 50,
     features: ['50 reports/month', 'Advanced analytics', 'Priority support']
   },
   plus: {
     name: 'Plus',
-    priceId: 'price_plus_monthly', // You'll get this from Stripe dashboard
+    priceId: process.env.STRIPE_PRICE_PLUS!, // You'll get this from Stripe dashboard
     price: 3999, // $39.99 in cents
     reports: 999, // Unlimited
     features: ['Unlimited reports', 'API access', 'Custom branding']
