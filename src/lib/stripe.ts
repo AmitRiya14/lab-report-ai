@@ -1,6 +1,6 @@
 // lib/stripe.ts
 import Stripe from 'stripe';
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe, Stripe as StripeJS } from '@stripe/stripe-js';
 
 // Server-side Stripe instance
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -8,13 +8,12 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
 });
 
-// Client-side Stripe instance
-let stripePromise: Promise<any>;
+// Client-side Stripe instance - use const and proper type
+const stripePromise: Promise<StripeJS | null> = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
+);
 
 export const getStripe = () => {
-  if (!stripePromise) {
-    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-  }
   return stripePromise;
 };
 

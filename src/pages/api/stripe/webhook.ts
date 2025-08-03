@@ -114,8 +114,8 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
       status: subscription.status,
       plan_type: planType || 'basic',
       // Fix: Access properties correctly
-      current_period_start: new Date((subscription as any).current_period_start * 1000).toISOString(),
-      current_period_end: new Date((subscription as any).current_period_end * 1000).toISOString(),
+      current_period_start: new Date((subscription as StripeSubscriptionWithPeriod).current_period_start * 1000).toISOString(),
+        current_period_end: new Date((subscription as StripeSubscriptionWithPeriod).current_period_end * 1000).toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -136,8 +136,9 @@ await supabaseAdmin
   .from('subscriptions')
   .update({
     status: subscription.status,
-    current_period_start: new Date((subscription as any).current_period_start * 1000).toISOString(),
-    current_period_end: new Date((subscription as any).current_period_end * 1000).toISOString(),
+    current_period_start: new Date((subscription as StripeSubscriptionWithPeriod).current_period_start * 1000).toISOString(),
+current_period_end: new Date((subscription as StripeSubscriptionWithPeriod).current_period_end * 1000).toISOString(),
+
     updated_at: new Date().toISOString(),
   })
   .eq('stripe_subscription_id', subscription.id);
@@ -196,7 +197,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-  const subscriptionId = (invoice as any).subscription as string;
+  const subscriptionId = (invoice as Stripe.Invoice & { subscription: string }).subscription;
   
   if (!subscriptionId) return;
 
@@ -219,8 +220,17 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   }
 }
 
+interface StripeSubscriptionWithPeriod extends Stripe.Subscription {
+  current_period_start: number;
+  current_period_end: number;
+}
+
+interface StripeInvoiceWithSubscription extends Stripe.Invoice {
+  subscription: string;
+}
+
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
-  const subscriptionId = (invoice as any).subscription as string;
+  const subscriptionId = (invoice as StripeInvoiceWithSubscription).subscription;
   
   if (!subscriptionId) return;
 

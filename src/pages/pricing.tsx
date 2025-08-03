@@ -3,12 +3,7 @@ import { useSession } from 'next-auth/react';
 import { Layout } from "@/components/Layout";
 import { getStripe } from '@/lib/stripe';
 import { 
-  Upload, 
-  FileText, 
-  HelpCircle, 
-  Settings, 
-  Wand2, 
-  User,
+  FileText,
   Crown,
   Star,
   Zap,
@@ -238,12 +233,12 @@ const SubscriptionPlansPage = () => {
     }
   };
 
-  const previousReports = [
+  /*const previousReports = [
     { id: "1", name: "BIOL", active: false },
     { id: "2", name: "BIZO", active: false },
     { id: "3", name: "Lab 4", active: false },
   ];
-
+*/
   return (
     <Layout 
       currentPage="pricing" 
@@ -259,7 +254,7 @@ const SubscriptionPlansPage = () => {
               Choose Your Perfect Plan
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Unlock the full potential of AI-powered lab report generation with plans designed for every student's needs
+              Unlock the full potential of AI-powered lab report generation with plans designed for every student&apos;s needs
             </p>
           </div>
         </div>
@@ -273,7 +268,7 @@ const SubscriptionPlansPage = () => {
                   <div className="flex items-center gap-3">
                     <Crown className="w-5 h-5 text-green-600" />
                     <span className="text-green-800 font-medium">
-                      You're currently on the {userTier} plan
+                      You&apos;re currently on the {userTier} plan
                     </span>
                   </div>
                   <button
@@ -292,7 +287,7 @@ const SubscriptionPlansPage = () => {
         <div className="px-8 pb-12">
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {plans.map((plan, index) => (
+                {plans.map((plan) => (
                   <div
                     key={plan.id}
                     className={`relative bg-white rounded-2xl shadow-lg border-2 transition-all duration-300 hover:shadow-2xl hover:scale-105 ${

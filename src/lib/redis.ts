@@ -7,7 +7,7 @@ const redis = new Redis({
 })
 
 // Cache user data for performance
-export const cacheUser = async (userId: string, userData: any) => {
+export const cacheUser = async (userId: string, userData: Record<string, unknown>) => {
   try {
     await redis.set(`user:${userId}`, JSON.stringify(userData), { ex: 3600 }) // 1 hour cache
   } catch (error) {
@@ -53,7 +53,7 @@ export const getCachedUsage = async (userId: string) => {
   }
 }
 
-export const setCachedUsage = async (userId: string, usage: any) => {
+export const setCachedUsage = async (userId: string, usage: Record<string, unknown>) => {
   try {
     await redis.set(`usage:${userId}`, JSON.stringify(usage), { ex: 86400 }) // 24 hour cache
   } catch (error) {

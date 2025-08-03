@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Check if any required vars are missing
     const missingVars = Object.entries(envCheck)
-      .filter(([key, value]) => value === false)
+      .filter(([, value]) => value === false)
       .map(([key]) => key);
 
     // Test Google OAuth configuration
@@ -35,7 +35,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           `${process.env.GOOGLE_CLIENT_ID.substring(0, 20)}...` : null
       };
     } catch (error) {
-      googleConfigTest = { error: error.message };
+      // Fix: Properly handle the unknown error type
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      googleConfigTest = { error: errorMessage };
     }
 
     // Test NextAuth session strategy
@@ -64,9 +66,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error) {
     console.error('NextAuth config test error:', error);
+    // Fix: Properly handle the unknown error type
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return res.status(500).json({ 
       error: 'Configuration test failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: errorMessage
     });
   }
 }

@@ -26,7 +26,7 @@ export const updateUserUsage = async (
   reportsUsed: number, 
   resetDate?: string
 ) => {
-  const updateData: any = { reports_used: reportsUsed };
+  const updateData: Partial<User> = { reports_used: reportsUsed };
   if (resetDate) updateData.reset_date = resetDate;
 
   const { data, error } = await supabaseAdmin

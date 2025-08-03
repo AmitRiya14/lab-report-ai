@@ -123,7 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Test 4: Check RLS policies (optional)
-    const { data: rlsTest, error: rlsError } = await supabase
+    const { error: rlsError } = await supabase
       .rpc('has_table_privilege', { 
         table_name: 'users', 
         privilege: 'SELECT' 

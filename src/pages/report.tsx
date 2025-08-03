@@ -24,10 +24,6 @@ import { marked } from "marked";
 import { Layout } from "@/components/Layout";
 import { useRouter } from "next/navigation"; // ✅ ADD THIS IMPORT
 import {
-  Upload,
-  FileText,
-  HelpCircle,
-  Settings,
   Wand2,
   RefreshCw,
   Lightbulb,
@@ -38,8 +34,6 @@ import {
   BookText,
   FileCode2,
   FileType2,
-  MousePointerClick,
-  Crown,
   CircleCheck,
   ChevronDown,
   Target, Copy, Check, Edit3, User,
@@ -105,10 +99,11 @@ export default function ReportPage() {
 
 /**
  * Handle navigation to upload page
- */
-const handleUploadNavigation = () => {
+ * const handleUploadNavigation = () => {
   router.push("/"); // Navigate back to upload page
 };
+ */
+
 
 // Get user info for layout
   const userTier = 'Pro'; // This would come from your user context/state

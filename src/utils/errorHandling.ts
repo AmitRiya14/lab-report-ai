@@ -9,18 +9,30 @@ export interface UsageInfo {
   tier?: string;
 }
 
+// Add this interface to replace 'any'
+interface ErrorLike {
+  status?: number;
+  message?: string;
+}
+
 /**
  * Handle different types of errors and redirect appropriately
  */
 export const handleError = (
-  error: any, 
+  error: Error | ErrorLike | unknown, // Replace 'any' with this union type
   router: AppRouterInstance, 
   context?: { usageInfo?: UsageInfo }
 ) => {
   console.error('Handling error:', error);
 
+  // Type guard to safely access properties
+  const hasProperty = (obj: unknown, prop: string): obj is Record<string, any> => {
+    return typeof obj === 'object' && obj !== null && prop in obj;
+  };
+
   // Usage limit error
-  if (error?.status === 429 || error?.message?.includes('Usage limit exceeded')) {
+  if ((hasProperty(error, 'status') && error.status === 429) || 
+      (hasProperty(error, 'message') && typeof error.message === 'string' && error.message.includes('Usage limit exceeded'))) {
     if (context?.usageInfo) {
       localStorage.setItem('lastUsageInfo', JSON.stringify(context.usageInfo));
     }
@@ -30,7 +42,7 @@ export const handleError = (
   }
 
   // Server errors (5xx)
-  if (error?.status >= 500) {
+  if (hasProperty(error, 'status') && typeof error.status === 'number' && error.status >= 500) {
     localStorage.setItem('lastError', 'server');
     router.push('/error?type=server');
     return;
@@ -44,14 +56,16 @@ export const handleError = (
   }
 
   // Parse errors
-  if (error?.message?.includes('parse') || error?.message?.includes('JSON')) {
+  if (hasProperty(error, 'message') && typeof error.message === 'string' && 
+      (error.message.includes('parse') || error.message.includes('JSON'))) {
     localStorage.setItem('lastError', 'parse');
     router.push('/error?type=parse');
     return;
   }
 
   // Data errors
-  if (error?.message?.includes('data') || error?.message?.includes('missing')) {
+  if (hasProperty(error, 'message') && typeof error.message === 'string' && 
+      (error.message.includes('data') || error.message.includes('missing'))) {
     localStorage.setItem('lastError', 'data');
     router.push('/error?type=data');
     return;
@@ -96,7 +110,7 @@ export const handleApiError = async (
       return;
     }
 
-  } catch (parseError) {
+  } catch {
     // If we can't parse the error response, treat as server error
     localStorage.setItem('lastError', 'server');
     router.push('/error?type=server');

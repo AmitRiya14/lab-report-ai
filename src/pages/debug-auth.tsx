@@ -1,10 +1,15 @@
-// pages/debug-auth.tsx - Enhanced debug page
+// pages/debug-auth.tsx - Fixed version
 import React, { useState, useEffect } from 'react';
 import { useSession, signIn, signOut, getSession } from 'next-auth/react';
 
 const DebugAuthPage = () => {
   const { data: session, status } = useSession();
-  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [debugInfo, setDebugInfo] = useState<{
+    sessionFromGetSession: any;
+    sessionFromUseSession: any;
+    status: string;
+    timestamp: string;
+  } | null>(null);
   const [cookies, setCookies] = useState<string>('');
 
   useEffect(() => {
@@ -68,7 +73,8 @@ const DebugAuthPage = () => {
       '/api/auth/csrf'
     ];
 
-    const results = {};
+    // Fix: Properly type the results object
+    const results: Record<string, { status?: number; data?: any; error?: string }> = {};
     
     for (const endpoint of endpoints) {
       try {
@@ -79,8 +85,10 @@ const DebugAuthPage = () => {
           data: data
         };
       } catch (error) {
+        // Fix: Properly handle unknown error type
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         results[endpoint] = {
-          error: error.message
+          error: errorMessage
         };
       }
     }
@@ -195,7 +203,7 @@ const DebugAuthPage = () => {
           <div className="space-y-2 text-sm">
             <div>NEXTAUTH_URL: {process.env.NEXTAUTH_URL || 'Not set (will use default)'}</div>
             <div>NEXTAUTH_SECRET: {process.env.NEXTAUTH_SECRET ? 'Set' : 'Missing (Required!)'}</div>
-            <div>Current URL: {typeof window !== 'undefined' ? window.location.origin : 'Server-side'}</div>
+            <div>Current URL: {typeof window !== "undefined" ? window.location.origin : "Server-side"}</div>
           </div>
         </div>
 
@@ -222,7 +230,7 @@ const DebugAuthPage = () => {
             <div>
               <strong>3. Clear Session and Try Again:</strong>
               <ul className="list-disc ml-5 mt-1">
-                <li>Click "Clear All Cookies" above</li>
+                <li>Click &quot;Clear All Cookies&quot; above</li>
                 <li>Restart your Next.js server</li>
                 <li>Try signing in again</li>
               </ul>

@@ -1,7 +1,8 @@
-// src/components/Layout/Header.tsx - Updated with Usage Display
+// src/components/Layout/Header.tsx - Fixed session type
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'next-auth/react';
+import { signOut } from 'next-auth/react'; // Import Session type
+import {Session} from 'next-auth';
 import { Settings, Wand2, User, LogOut, ChevronDown, AlertTriangle, Crown } from 'lucide-react';
 import { getCurrentUsage, isAtUsageLimit, isNearUsageLimit } from '@/utils/errorHandling';
 
@@ -12,7 +13,7 @@ interface HeaderProps {
     current: number;
     limit: number;
   };
-  session?: any;
+  session?: Session | null; // Use the proper NextAuth Session type
 }
 
 export const Header: React.FC<HeaderProps> = ({ 

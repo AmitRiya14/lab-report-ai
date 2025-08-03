@@ -1,7 +1,7 @@
 // components/AuthGuard.tsx - Fixed version
 import React, { useEffect, useState } from 'react';
 import { useSession, signIn } from 'next-auth/react';
-import { Crown, User, X } from 'lucide-react';
+import { Crown, X } from 'lucide-react';
 
 interface AuthGuardProps {
   children: React.ReactNode;

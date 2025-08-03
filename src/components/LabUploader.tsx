@@ -3,14 +3,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 // Import the required icons from lucide-react for the header and new features
-import { 
-  Wand2, 
-  Settings, 
-  User, 
-  Upload, 
-  FileText, 
-  HelpCircle, 
-  Crown,
+import {
+  Upload,
   Zap,
   ChevronDown
 } from "lucide-react";
@@ -111,9 +105,10 @@ export default function LabUploader() {
   };
 
 
-// Add this component inside your LabUploader component (before the return statement)
+// Fix line 116 - replace 'any' with proper type
 const UsageDisplay = () => {
-  const [usage, setUsage] = useState<any>(null);
+  const [usage, setUsage] = useState<{current: number; limit: number; tier: string} | null>(null);
+
   
   useEffect(() => {
     const getCurrentUsage = () => {
@@ -439,21 +434,22 @@ const UsageDisplay = () => {
   /**
    * Handle navigation to report page
    */
-  const handleReportNavigation = () => {
+  /*const handleReportNavigation = () => {
     if (hasGeneratedReport) {
       router.push("/report");
     } else {
       alert("Please generate a lab report first by uploading your files.");
     }
   };
+*/
 
   // Mock previous lab reports data
-  const previousReports = [
+  /*const previousReports = [
     { id: "1", name: "BIOL", active: false },
     { id: "2", name: "BIZO", active: false },
     { id: "3", name: "Lab 4", active: false },
   ];
-
+*/
   return (        
       <Layout 
     currentPage="dashboard" 

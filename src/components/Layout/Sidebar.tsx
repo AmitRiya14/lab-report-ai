@@ -128,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-xs text-red-600 font-medium mb-2">
-                You've reached your monthly limit!
+                You&apos;ve reached your monthly limit!
               </p>
               <button
                 onClick={handleUpgradeClick}
@@ -143,7 +143,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-xs text-amber-600 mb-2">
-                You're close to your limit. Consider upgrading.
+                You&apos;re close to your limit. Consider upgrading.
               </p>
               <button
                 onClick={handleUpgradeClick}

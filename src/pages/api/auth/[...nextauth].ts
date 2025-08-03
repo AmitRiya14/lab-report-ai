@@ -62,14 +62,18 @@ export const authOptions: NextAuthOptions = {
 }
 
 // Helper function to ensure user exists in our database
-async function ensureUserExists(user: any): Promise<string> {
+async function ensureUserExists(user: {
+  email: string;
+  name?: string | null;
+  image?: string | null;
+}): Promise<string> {
   try {
     // Check if user already exists
-    const { data: existingUser, error: selectError } = await supabaseAdmin
-      .from('users')
-      .select('id, tier')
-      .eq('email', user.email)
-      .single()
+    const { data: existingUser } = await supabaseAdmin
+    .from('users')
+    .select('id, tier')
+    .eq('email', user.email)
+    .single()
 
     if (existingUser) {
       // User exists, ensure they have tier data

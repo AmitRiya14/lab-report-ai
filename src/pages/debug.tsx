@@ -4,7 +4,12 @@ import { useSession } from 'next-auth/react';
 
 const DebugPage = () => {
   const { data: session, status } = useSession();
-  const [testResults, setTestResults] = useState<any>(null);
+  const [testResults, setTestResults] = useState<{
+  success?: boolean;
+  error?: string;
+  message?: string;
+  [key: string]: any;
+} | null>(null);
   const [loading, setLoading] = useState(false);
 
   const testSupabaseConnection = async () => {
@@ -71,7 +76,7 @@ const DebugPage = () => {
               </span>
             </div>
             <div className="text-xs text-gray-500 mt-2">
-              Note: SUPABASE_SERVICE_ROLE_KEY is server-side only and won't show here
+              Note: SUPABASE_SERVICE_ROLE_KEY is server-side only and won&apos;t show here
             </div>
           </div>
         </div>

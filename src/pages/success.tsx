@@ -10,7 +10,14 @@ const SuccessPage = () => {
   const { data: session } = useSession();
   const { session_id } = router.query;
   const [loading, setLoading] = useState(true);
-  const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
+  interface SubscriptionDetails {
+  planName: string;
+  amount: string;
+  interval: string;
+  nextBilling: string;
+}
+const [subscriptionDetails, setSubscriptionDetails] = useState<SubscriptionDetails | null>(null);
+
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,7 +40,7 @@ const SuccessPage = () => {
         nextBilling: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(),
       });
       setLoading(false);
-    } catch (err) {
+    } catch {
       setError('Failed to load subscription details');
       setLoading(false);
     }
@@ -43,10 +50,10 @@ const SuccessPage = () => {
     router.push('/');
   };
 
-  const handleViewDashboard = () => {
+  /*const handleViewDashboard = () => {
     router.push('/dashboard');
   };
-
+*/
   if (loading) {
     return (
       <Layout currentPage="dashboard" userTier="Pro">
@@ -187,7 +194,7 @@ const SuccessPage = () => {
 
           {/* Next Steps */}
           <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">What's Next?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">What&apos;s Next?</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>

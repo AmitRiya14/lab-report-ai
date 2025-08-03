@@ -1,4 +1,4 @@
-// components/Layout/index.tsx - Updated with Usage Management
+// components/Layout/index.tsx - Fixed version
 import React from 'react';
 import { useSession } from 'next-auth/react';
 import { Header } from './Header';
@@ -54,7 +54,7 @@ export const Layout: React.FC<LayoutProps> = ({
           currentPage={currentPage} 
           userTier={actualUserTier} 
           usageInfo={actualUsageInfo}
-          session={session}
+          session={session} // This now matches the Session | null type
         />
         <div className="flex flex-1">
           <Sidebar 
@@ -73,7 +73,7 @@ export const Layout: React.FC<LayoutProps> = ({
 };
 
 // Helper function to get tier limits
-function getTierLimit(tier: string): number {
+/*function getTierLimit(tier: string): number {
   switch (tier) {
     case 'Free': return 3;
     case 'Basic': return 15;
@@ -81,4 +81,4 @@ function getTierLimit(tier: string): number {
     case 'Plus': return 999; // Unlimited
     default: return 3;
   }
-}
+}*/

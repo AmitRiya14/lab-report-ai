@@ -20,13 +20,13 @@ export const trackMetric = (metric: string, value: number, tags?: Record<string,
         tags
       })
     }).catch(() => {}); // Silent fail for metrics
-  } catch (error) {
+  } catch {
     // Silent fail for metrics
   }
 };
 
 // Usage in your APIs
-export const withMetrics = (handler: any) => {
+export const withMetrics = (handler: (req: any, res: any) => Promise<any>) => {
   return async (req: any, res: any) => {
     const start = Date.now();
     
