@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Layout } from "@/components/Layout";
-import { getStripe } from '@/lib/stripe';
 import { 
   FileText,
   Crown,
@@ -148,62 +147,56 @@ const SubscriptionPlansPage = () => {
   ];
 
   const handlePlanSelect = async (planId: string) => {
-    if (!session) {
-      alert('Please sign in to subscribe to a plan.');
-      return;
+  if (!session) {
+    alert('Please sign in to subscribe to a plan.');
+    return;
+  }
+
+  const plan = plans.find(p => p.id === planId);
+  
+  if (plan?.id === 'free') {
+    alert('You are already on the free plan!');
+    return;
+  }
+
+  if (!plan?.stripeAction) {
+    alert('Invalid plan selection');
+    return;
+  }
+
+  setLoadingPlan(planId);
+
+  try {
+    // Create checkout session
+    const response = await fetch('/api/stripe/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        planType: plan.stripeAction,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to create checkout session');
     }
 
-    const plan = plans.find(p => p.id === planId);
-    
-    if (plan?.id === 'free') {
-      alert('You are already on the free plan!');
-      return;
+    // Use the URL directly instead of Stripe client
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error('No checkout URL received');
     }
-
-    if (!plan?.stripeAction) {
-      alert('Invalid plan selection');
-      return;
-    }
-
-    setLoadingPlan(planId);
-
-    try {
-      // Create checkout session
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          planType: plan.stripeAction,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      // Redirect to Stripe Checkout
-      const stripe = await getStripe();
-      if (stripe) {
-        const { error } = await stripe.redirectToCheckout({
-          sessionId: data.sessionId,
-        });
-
-        if (error) {
-          console.error('Stripe redirect error:', error);
-          alert('Failed to redirect to checkout. Please try again.');
-        }
-      }
-    } catch (error) {
-      console.error('Subscription error:', error);
-      alert(error instanceof Error ? error.message : 'Failed to start subscription process');
-    } finally {
-      setLoadingPlan(null);
-    }
-  };
+  } catch (error) {
+    console.error('Subscription error:', error);
+    alert(error instanceof Error ? error.message : 'Failed to start subscription process');
+  } finally {
+    setLoadingPlan(null);
+  }
+};
 
   const handleManageSubscription = async () => {
     if (!session) {
