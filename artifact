@@ -44,7 +44,7 @@ export const authOptions: NextAuthOptions = {
       
       // Use Jose for JWT encoding (more secure than default)
       const { SignJWT } = await import('jose');
-      const secretKey = new TextEncoder().encode(secret as string);
+      const secretKey = new TextEncoder().encode(secret);
       
       return await new SignJWT(jwtClaims)
         .setProtectedHeader({ alg: 'HS256' })
@@ -55,13 +55,11 @@ export const authOptions: NextAuthOptions = {
     
     decode: async ({ token, secret }) => {
       try {
-        if (!token) return null;
-        
         const { jwtVerify } = await import('jose');
-        const secretKey = new TextEncoder().encode(secret as string);
+        const secretKey = new TextEncoder().encode(secret);
         
-        const { payload } = await jwtVerify(token, secretKey);
-        return payload;
+        const { payload } = await jwtVerify(token!, secretKey);
+        return payload as any;
       } catch (error) {
         console.error('JWT decode error:', error);
         return null;
@@ -118,15 +116,12 @@ export const authOptions: NextAuthOptions = {
         token.sessionId = randomBytes(16).toString('hex');
         
         // Store session in database for tracking
-        await createSecureSession(userRecord.id, token.sessionId as string);
+        await createSecureSession(userRecord.id, token.sessionId);
       }
 
       // Validate session on each request
       if (token.userId && token.sessionId) {
-        const isValidSession = await validateSession(
-          token.userId as string, 
-          token.sessionId as string
-        );
+        const isValidSession = await validateSession(token.userId, token.sessionId);
         if (!isValidSession) {
           console.warn('Invalid session detected, forcing re-auth');
           return {}; // Force re-authentication
@@ -147,16 +142,12 @@ export const authOptions: NextAuthOptions = {
             .single();
 
           if (userData.error || !userData.data) {
-            console.error('User data not found');
-            // Return empty session to force re-authentication
-            return { ...session, user: { ...session.user, id: '', tier: 'Free', reportsUsed: 0 } };
+            throw new Error('User data not found');
           }
 
           // Check if account is still active
           if (!userData.data.is_active) {
-            console.error('Account deactivated');
-            // Return empty session to force re-authentication  
-            return { ...session, user: { ...session.user, id: '', tier: 'Free', reportsUsed: 0 } };
+            throw new Error('Account deactivated');
           }
 
           // Update last activity
@@ -171,8 +162,7 @@ export const authOptions: NextAuthOptions = {
           session.user.resetDate = userData.data.reset_date;
         } catch (error) {
           console.error('Session callback error:', error);
-          // Return minimal session instead of empty object
-          return { ...session, user: { ...session.user, id: '', tier: 'Free', reportsUsed: 0 } };
+          return {}; // Force re-authentication
         }
       }
 
@@ -180,11 +170,11 @@ export const authOptions: NextAuthOptions = {
     }
   },
 
-  // Remove pages configuration to keep popup behavior
-  // pages: {
-  //   signIn: '/auth/signin',
-  //   error: '/auth/error',
-  // },
+  // Enhanced pages configuration
+  pages: {
+    signIn: '/auth/signin',
+    error: '/auth/error',
+  },
 
   // Security events logging
   events: {
@@ -197,10 +187,10 @@ export const authOptions: NextAuthOptions = {
       
       // Log to security audit table
       await logSecurityEvent('SIGN_IN', {
-        userId: message.user.id || '',
-        email: message.user.email || '',
-        provider: message.account?.provider || '',
-        ip: message.account?.providerAccountId || ''
+        userId: message.user.id,
+        email: message.user.email,
+        provider: message.account?.provider,
+        ip: message.account?.providerAccountId
       });
     },
 
@@ -212,10 +202,7 @@ export const authOptions: NextAuthOptions = {
 
       // Invalidate session in database
       if (message.token?.userId && message.token?.sessionId) {
-        await invalidateSession(
-          message.token.userId as string, 
-          message.token.sessionId as string
-        );
+        await invalidateSession(message.token.userId, message.token.sessionId);
       }
     },
 

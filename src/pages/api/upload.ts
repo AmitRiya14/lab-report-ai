@@ -5,8 +5,12 @@ import formidable from "formidable";
 import fs from "fs";
 import { parseLabManual } from "@/lib/parser";
 import { processExcelFile, ChartSpec } from "@/lib/excel";
-import { generateLabReport } from "@/lib/claude";
+import { claudeService } from "@/lib/server/claude-server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { createSecureHandler } from '@/lib/middleware';
+import { FileValidator } from '@/lib/security/fileValidation';
+import { withRateLimit, RATE_LIMITS, withDDoSProtection } from "@/lib/middleware/rateLimit";
+import { trackUsage } from "@/lib/server/usage-tracking";
 
 export const config = {
   api: {
@@ -35,94 +39,6 @@ function stripMarkdownSync(text: string): string {
     .replace(/^[-\s:]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/**
- * Check and update user usage limits using Supabase
- */
-async function checkAndUpdateUsage(userEmail: string): Promise<{
-  success: boolean;
-  error?: string;
-  usage?: {
-    current: number;
-    limit: number;
-    tier: string;
-  };
-}> {
-  try {
-    // Get user from Supabase
-    const { data: user, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, tier, reports_used, reset_date')
-      .eq('email', userEmail)
-      .single();
-
-    if (fetchError || !user) {
-      console.error('User fetch error:', fetchError);
-      return { success: false, error: 'User not found' };
-    }
-
-    // Check if usage should reset (monthly reset)
-    const now = new Date();
-    const resetDate = new Date(user.reset_date);
-    const shouldReset = now.getMonth() !== resetDate.getMonth() || 
-                       now.getFullYear() !== resetDate.getFullYear();
-
-    // Get tier limits
-    const limits = {
-      Free: 3,
-      Basic: 15,
-      Pro: 50,
-      Plus: 999
-    };
-
-    const userLimit = limits[user.tier as keyof typeof limits] || 3;
-    const currentUsage = shouldReset ? 0 : user.reports_used;
-
-    // Check if user has exceeded limit
-    if (currentUsage >= userLimit && user.tier !== 'Plus') {
-      return {
-        success: false,
-        error: 'Monthly report limit exceeded',
-        usage: {
-          current: currentUsage,
-          limit: userLimit,
-          tier: user.tier
-        }
-      };
-    }
-
-    // Update usage in Supabase
-    const newUsage = shouldReset ? 1 : currentUsage + 1;
-    const newResetDate = shouldReset ? now.toISOString() : user.reset_date;
-
-    const { error: updateError } = await supabaseAdmin
-      .from('users')
-      .update({
-        reports_used: newUsage,
-        reset_date: newResetDate,
-        updated_at: now.toISOString()
-      })
-      .eq('id', user.id);
-
-    if (updateError) {
-      console.error('User update error:', updateError);
-      return { success: false, error: 'Failed to update usage' };
-    }
-
-    return {
-      success: true,
-      usage: {
-        current: newUsage,
-        limit: userLimit,
-        tier: user.tier
-      }
-    };
-
-  } catch (error) {
-    console.error('Usage check error:', error);
-    return { success: false, error: 'Internal server error' };
-  }
 }
 
 /**
@@ -184,29 +100,8 @@ ${rawData}
 Generate a clear, point-based rubric:`;
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.CLAUDE_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1200,
-        temperature: 0.4,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Claude API error: ${response.status}`);
-    }
-
-    const body = await response.text();
-    const parsed = JSON.parse(body);
-    const rawRubric = parsed?.content?.[0]?.text?.trim() || "Rubric generation failed.";
-    return stripMarkdownSync(rawRubric);
+    const rawRubric = await claudeService.generateReport(prompt, 1200);
+    return stripMarkdownSync(rawRubric || "Rubric generation failed.");
   } catch (error) {
     console.error('Rubric generation error:', error);
     return "Error generating rubric. Please try again.";
@@ -234,28 +129,8 @@ ${reportContent.substring(0, 1500)}
 Generate only the title, nothing else:`;
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.CLAUDE_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 100,
-        temperature: 0.3,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Claude API error: ${response.status}`);
-    }
-
-    const body = await response.text();
-    const parsed = JSON.parse(body);
-    const title = parsed?.content?.[0]?.text?.trim() || "Lab Report: Experiment Analysis";
+    const rawTitle = await claudeService.generateReport(prompt, 100);
+    const title = rawTitle?.trim() || "Lab Report: Experiment Analysis";
     
     // Clean up the title and ensure proper format
     let cleanTitle = title.replace(/^["']|["']$/g, ''); // Remove quotes
@@ -270,7 +145,7 @@ Generate only the title, nothing else:`;
   }
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -290,13 +165,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     console.log('✅ Authenticated user:', session.user.email);
+    // Add user ID to headers for rate limiting
+    req.headers['x-user-id'] = session.user.email;
 
-    // Check usage limits
-    const usageCheck = await checkAndUpdateUsage(session.user.email);
+    // Check usage limits using the new tracking service
+    const usageCheck = await trackUsage(session.user.email, {
+      operation: 'UPLOAD',
+      checkOnly: true
+    });
     
     if (!usageCheck.success) {
       console.log('❌ Usage check failed:', usageCheck.error);
-      if (usageCheck.error === 'Monthly report limit exceeded') {
+      if (usageCheck.error === 'Usage limit exceeded') {
         return res.status(429).json({
           error: 'Usage limit exceeded',
           message: `You've reached your monthly limit of ${usageCheck.usage?.limit} reports. Upgrade your plan to generate more reports.`,
@@ -335,6 +215,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let rawDataText = "";
       let chartSpec: ChartSpec | null = null;
 
+      // Validate each uploaded file
+      for (const file of uploadedFiles) {
+        if (!file?.filepath) continue;
+        
+        const fileBuffer = fs.readFileSync(file.filepath);
+        const validation = await FileValidator.validateFile({
+          name: file.originalFilename || 'unknown',
+          buffer: fileBuffer,
+          mimetype: file.mimetype || 'application/octet-stream',
+          size: file.size || 0
+        });
+        
+        if (!validation.isValid) {
+          console.error('File validation failed:', validation.errors);
+          return res.status(400).json({
+            error: 'File validation failed',
+            details: validation.errors
+          });
+        }
+      }
+
       // Process uploaded files
       for (const file of uploadedFiles) {
         if (!file?.filepath) {
@@ -371,9 +272,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       try {
         // Generate content
+        const fullPrompt = `You are a scientific writer creating a comprehensive university-level lab report. 
+
+Generate a complete lab report with these sections:
+1. **Title** - Descriptive and scientific
+2. **Abstract** - 150-200 words summarizing experiment, methods, key findings
+3. **Introduction** - Background theory, relevant literature, clear hypothesis
+4. **Methods** - Detailed experimental procedure (reference lab manual)
+5. **Results** - Data presentation with figures/tables, statistical analysis, clear trends
+6. **Discussion** - Interpretation of results, comparison to literature, limitations
+7. **Conclusion** - Summary of key findings and implications
+8. **References** - Proper scientific citations
+
+Requirements:
+- Use formal academic language
+- Include specific data and measurements
+- Show statistical analysis (t-tests, p-values, error bars)
+- Reference relevant literature
+- Write 2000-3000 words total
+
+Lab Manual:
+${manualText}
+
+Experimental Data:
+${rawDataText}
+
+Generate a complete, professional lab report:`;
+
         const [rubric, report] = await Promise.all([
           generateRubricFromManual(manualText, rawDataText),
-          generateLabReport(manualText, rawDataText)
+          claudeService.generateReport(fullPrompt, 4000)
         ]);
 
         if (!report || report.length < 100) {
@@ -398,6 +326,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         const cleanedReport = report.replace(/```json\s*[\s\S]*?```/, "").trim();
+
+        // Update usage after successful generation
+        await trackUsage(session.user.email, {
+          operation: 'UPLOAD',
+          reportTitle: generatedTitle,
+          reportContent: cleanedReport
+        });
 
         // Save report to database
         await saveReport(session.user.email, generatedTitle, cleanedReport);
@@ -429,3 +364,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
+
+// Apply advanced rate limiting and DDoS protection
+const rateLimitedHandler = withDDoSProtection()(
+  withRateLimit(
+    RATE_LIMITS.UPLOAD.requests,
+    RATE_LIMITS.UPLOAD.windowMs,
+    {
+      keyGenerator: (req) => {
+        const userId = req.headers['x-user-id'] as string;
+        const ip = req.headers['x-forwarded-for'] as string || 
+                 req.headers['x-real-ip'] as string ||
+                 req.socket.remoteAddress;
+        return userId ? `upload:user:${userId}` : `upload:ip:${ip}`;
+      },
+      onLimitReached: (req, res) => {
+        console.warn(`Upload rate limit exceeded`);
+        res.status(429).json({
+          error: 'Usage limit exceeded',
+          message: 'You are uploading files too frequently. Please wait 15 minutes.',
+          retryAfter: 900
+        });
+      }
+    }
+  )(uploadHandler)
+);
+
+export default createSecureHandler(rateLimitedHandler, {
+  requireAuth: true,
+});

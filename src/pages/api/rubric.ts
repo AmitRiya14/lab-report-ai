@@ -1,4 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
+import { claudeService } from "@/lib/server/claude-server";
+import { createSecureHandler } from '@/lib/middleware';
 
 export const config = {
   api: {
@@ -6,7 +8,7 @@ export const config = {
   },
 };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function rubricHandler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -58,64 +60,16 @@ ${reportText}
 
 Provide clear, constructive feedback:`;
 
-    // Stream directly from Claude
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.CLAUDE_API_KEY!,
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        stream: true,
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
-
-    if (!claudeResponse.ok) {
-      res.write(`data: ${JSON.stringify({ type: "error", error: `Claude API error: ${claudeResponse.status}` })}\n\n`);
-      res.end();
-      return;
-    }
-
-    if (!claudeResponse.body) {
-      res.write(`data: ${JSON.stringify({ type: "error", error: "No response body from Claude API" })}\n\n`);
-      res.end();
-      return;
-    }
-
-    const reader = claudeResponse.body.getReader();
-    const decoder = new TextDecoder();
-
+    // Use server-side Claude service for streaming
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          
-          // Forward the line directly to client
-          res.write(line + '\n');
-          
-          // Force immediate flush - safely access the underlying Node.js response
-          const nodeRes = res as NextApiResponse & { flush?: () => void };
-          if (nodeRes.flush) {
-            nodeRes.flush();
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
+      await claudeService.streamGeneration(req, res, prompt);
+    } catch (error) {
+      console.error("Claude service error:", error);
+      res.write(`data: ${JSON.stringify({ 
+        type: "error", 
+        error: error instanceof Error ? error.message : "Unknown error"
+      })}\n\n`);
     }
-
-    res.write('data: [DONE]\n\n');
 
   } catch (error) {
     console.error("API Error:", error);
@@ -127,3 +81,15 @@ Provide clear, constructive feedback:`;
     res.end();
   }
 }
+
+import { withRateLimit, RATE_LIMITS } from "@/lib/middleware/rateLimit";
+
+// Apply advanced rate limiting
+const rateLimitedHandler = withRateLimit(
+  RATE_LIMITS.GENERATE.requests,
+  RATE_LIMITS.GENERATE.windowMs
+)(rubricHandler);
+
+export default createSecureHandler(rateLimitedHandler, {
+  requireAuth: true,
+});
