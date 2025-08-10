@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { Redis } from '@upstash/redis';
+import { securityMonitor } from '@/lib/security/monitoring';
 
 interface RateLimitConfig {
   requests: number;
@@ -8,6 +9,13 @@ interface RateLimitConfig {
   skipFailedRequests?: boolean;
   keyGenerator?: (req: NextApiRequest) => string;
   onLimitReached?: (req: NextApiRequest, res: NextApiResponse) => void;
+}
+
+function getClientIP(req: NextApiRequest): string {
+  return (req.headers['x-forwarded-for'] as string) ||
+         (req.headers['x-real-ip'] as string) ||
+         req.socket.remoteAddress ||
+         'unknown';
 }
 
 export class RateLimiter {
@@ -47,41 +55,41 @@ export class RateLimiter {
   }
 
   private async checkRedisLimit(key: string, config: RateLimitConfig, now: number) {
-  const windowStart = now - config.windowMs;
-  
-  try {
-    const pipeline = this.redis!.pipeline();
+    const windowStart = now - config.windowMs;
     
-    // Remove expired entries
-    pipeline.zremrangebyscore(key, 0, windowStart);
-    
-    // Count current requests
-    pipeline.zcard(key);
-    
-    // Add current request - FIXED FORMAT
-    pipeline.zadd(key, { score: now, member: `${now}-${Math.random()}` });
-    
-    // Set expiration
-    pipeline.expire(key, Math.ceil(config.windowMs / 1000));
-    
-    const results = await pipeline.exec();
-    const currentCount = (results[1] as number) || 0;
-    
-    const allowed = currentCount < config.requests;
-    const remaining = Math.max(0, config.requests - currentCount - 1);
-    const resetTime = now + config.windowMs;
+    try {
+      const pipeline = this.redis!.pipeline();
+      
+      // Remove expired entries
+      pipeline.zremrangebyscore(key, 0, windowStart);
+      
+      // Count current requests
+      pipeline.zcard(key);
+      
+      // Add current request - FIXED FORMAT
+      pipeline.zadd(key, { score: now, member: `${now}-${Math.random()}` });
+      
+      // Set expiration
+      pipeline.expire(key, Math.ceil(config.windowMs / 1000));
+      
+      const results = await pipeline.exec();
+      const currentCount = (results[1] as number) || 0;
+      
+      const allowed = currentCount < config.requests;
+      const remaining = Math.max(0, config.requests - currentCount - 1);
+      const resetTime = now + config.windowMs;
 
-    return {
-      allowed,
-      remaining,
-      resetTime,
-      total: config.requests
-    };
-  } catch (error) {
-    console.warn('Redis rate limit failed, falling back to memory:', error);
-    return this.checkMemoryLimit(key, config, now);
+      return {
+        allowed,
+        remaining,
+        resetTime,
+        total: config.requests
+      };
+    } catch (error) {
+      console.warn('Redis rate limit failed, falling back to memory:', error);
+      return this.checkMemoryLimit(key, config, now);
+    }
   }
-}
 
   private checkMemoryLimit(key: string, config: RateLimitConfig, now: number) {
     const entry = this.memoryStore.get(key);
@@ -153,9 +161,7 @@ export const withRateLimit = (
           keyGenerator: (req) => {
             // Use user ID if authenticated, otherwise IP
             const userId = req.headers['x-user-id'] as string;
-            const ip = req.headers['x-forwarded-for'] as string || 
-                     req.headers['x-real-ip'] as string ||
-                     req.socket.remoteAddress;
+            const ip = getClientIP(req);
             return userId ? `user:${userId}` : `ip:${ip}`;
           },
           ...options
@@ -171,6 +177,24 @@ export const withRateLimit = (
 
         if (!result.allowed) {
           res.setHeader('Retry-After', Math.ceil((result.resetTime - Date.now()) / 1000));
+          
+          const ip = getClientIP(req);
+          
+          // ✅ LOG RATE LIMIT VIOLATION WITH SECURITY MONITORING
+          await securityMonitor.logSecurityEvent({
+            type: 'RATE_LIMIT_EXCEEDED',
+            severity: 'MEDIUM',
+            ipAddress: ip,
+            userAgent: req.headers['user-agent'] as string,
+            metadata: {
+              endpoint: req.url,
+              method: req.method,
+              remaining: result.remaining,
+              limit: config.requests,
+              key: key,
+              timestamp: new Date().toISOString()
+            }
+          });
           
           // Log rate limit violation
           console.warn(`Rate limit exceeded for ${key}`, {
@@ -211,10 +235,7 @@ const bannedIPs = new Map<string, number>();
 export const withDDoSProtection = () => {
   return (handler: (req: NextApiRequest, res: NextApiResponse) => Promise<void>) => {
     return async (req: NextApiRequest, res: NextApiResponse) => {
-      const ip = req.headers['x-forwarded-for'] as string || 
-                req.headers['x-real-ip'] as string ||
-                req.socket.remoteAddress || 'unknown';
-      
+      const ip = getClientIP(req);
       const now = Date.now();
 
       // Check if IP is banned
@@ -248,6 +269,22 @@ export const withDDoSProtection = () => {
             requestCounts.delete(ip);
             
             console.error(`IP banned for DDoS: ${ip}, ${current.count} requests in ${timeWindow}ms`);
+            
+            // ✅ LOG DDOS ATTACK
+            await securityMonitor.logSecurityEvent({
+              type: 'SUSPICIOUS_ACTIVITY',
+              severity: 'CRITICAL',
+              ipAddress: ip,
+              userAgent: req.headers['user-agent'] as string,
+              metadata: {
+                pattern: 'DDOS_ATTACK',
+                requestCount: current.count,
+                timeWindow: timeWindow,
+                endpoint: req.url,
+                banned: true,
+                timestamp: new Date().toISOString()
+              }
+            });
             
             return res.status(429).json({
               error: 'Too many requests',

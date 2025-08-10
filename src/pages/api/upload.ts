@@ -11,6 +11,7 @@ import { createSecureHandler } from '@/lib/middleware';
 import { FileValidator } from '@/lib/security/fileValidation';
 import { withRateLimit, RATE_LIMITS, withDDoSProtection } from "@/lib/middleware/rateLimit";
 import { trackUsage } from "@/lib/server/usage-tracking";
+import { securityMonitor } from '@/lib/security/monitoring'; // ✅ ADD THIS IMPORT
 
 export const config = {
   api: {
@@ -145,6 +146,13 @@ Generate only the title, nothing else:`;
   }
 }
 
+function getClientIP(req: NextApiRequest): string {
+  return (req.headers['x-forwarded-for'] as string) ||
+         (req.headers['x-real-ip'] as string) ||
+         req.socket.remoteAddress ||
+         'unknown';
+}
+
 async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -158,6 +166,20 @@ async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
     
     if (!session?.user?.email) {
       console.log('❌ No authenticated session');
+      
+      // ✅ LOG UNAUTHORIZED ACCESS ATTEMPT
+      await securityMonitor.logSecurityEvent({
+        type: 'UNAUTHORIZED_ACCESS',
+        severity: 'MEDIUM',
+        ipAddress: getClientIP(req),
+        userAgent: req.headers['user-agent'] as string,
+        metadata: {
+          endpoint: '/api/upload',
+          attemptedAction: 'file_upload',
+          timestamp: new Date().toISOString()
+        }
+      });
+      
       return res.status(401).json({ 
         error: 'Authentication required',
         message: 'Please sign in to generate lab reports'
@@ -165,7 +187,6 @@ async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
     }
 
     console.log('✅ Authenticated user:', session.user.email);
-    // Add user ID to headers for rate limiting
     req.headers['x-user-id'] = session.user.email;
 
     // Check usage limits using the new tracking service
@@ -229,6 +250,25 @@ async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
         
         if (!validation.isValid) {
           console.error('File validation failed:', validation.errors);
+          
+          // ✅ LOG MALICIOUS FILE UPLOAD ATTEMPT
+          await securityMonitor.logSecurityEvent({
+            type: 'MALICIOUS_FILE_UPLOAD',
+            severity: 'CRITICAL',
+            userId: session.user.id,
+            email: session.user.email,
+            ipAddress: getClientIP(req),
+            userAgent: req.headers['user-agent'] as string,
+            metadata: {
+              filename: file.originalFilename,
+              errors: validation.errors,
+              fileHash: FileValidator.generateFileHash(fileBuffer),
+              fileSize: file.size,
+              mimetype: file.mimetype,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
           return res.status(400).json({
             error: 'File validation failed',
             details: validation.errors
@@ -337,6 +377,23 @@ Generate a complete, professional lab report:`;
         // Save report to database
         await saveReport(session.user.email, generatedTitle, cleanedReport);
 
+        // ✅ LOG SUCCESSFUL REPORT GENERATION
+        await securityMonitor.logSecurityEvent({
+          type: 'SUCCESSFUL_LOGIN', // Using this as closest match for successful operation
+          severity: 'LOW',
+          userId: session.user.id,
+          email: session.user.email,
+          ipAddress: getClientIP(req),
+          userAgent: req.headers['user-agent'] as string,
+          metadata: {
+            action: 'report_generated',
+            reportTitle: generatedTitle,
+            reportLength: cleanedReport.length,
+            filesProcessed: uploadedFiles.length,
+            timestamp: new Date().toISOString()
+          }
+        });
+
         console.log('✅ Upload API completed successfully');
 
         return res.status(200).json({
@@ -349,6 +406,22 @@ Generate a complete, professional lab report:`;
 
       } catch (generationError) {
         console.error('Content generation error:', generationError);
+        
+        // ✅ LOG API ABUSE OR UNUSUAL PATTERN
+        await securityMonitor.logSecurityEvent({
+          type: 'API_ABUSE',
+          severity: 'MEDIUM',
+          userId: session.user.id,
+          email: session.user.email,
+          ipAddress: getClientIP(req),
+          userAgent: req.headers['user-agent'] as string,
+          metadata: {
+            error: generationError instanceof Error ? generationError.message : 'Unknown error',
+            endpoint: '/api/upload',
+            timestamp: new Date().toISOString()
+          }
+        });
+        
         return res.status(500).json({ 
           error: 'Failed to generate report content',
           message: 'There was an error processing your files. Please try again.'

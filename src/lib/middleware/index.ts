@@ -4,8 +4,8 @@ import { withAuth } from '@/lib/middleware/auth';
 import { withRateLimit } from '@/lib/middleware/rateLimit';
 import { withValidation } from '@/lib/middleware/validation';
 import { withErrorHandling } from '@/lib/middleware/errorHandling';
+import { withSecurityHeaders } from '@/lib/middleware/securityHeaders'; // Add this import
 
-// Secure API route wrapper
 export const createSecureHandler = (
   handler: (req: NextApiRequest, res: NextApiResponse) => Promise<void>,
   options: {
@@ -31,6 +31,9 @@ export const createSecureHandler = (
   if (options.requireAuth) {
     wrappedHandler = withAuth(wrappedHandler);
   }
+
+  // Add security headers
+  wrappedHandler = withSecurityHeaders()(wrappedHandler); // Add this line
 
   // Always apply error handling
   wrappedHandler = withErrorHandling(wrappedHandler);

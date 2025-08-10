@@ -2,11 +2,18 @@
 // SECURE AUTHENTICATION SYSTEM
 // ========================================
 
-// UPDATE: src/pages/api/auth/[...nextauth].ts
 import NextAuth, { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 import { supabaseAdmin } from "@/lib/supabase"
 import { createHash, randomBytes } from 'crypto';
+import { securityMonitor } from '@/lib/security/monitoring'; // ✅ ADD THIS IMPORT
+
+function getClientIP(req: any): string {
+  return req.headers['x-forwarded-for'] || 
+         req.headers['x-real-ip'] ||
+         req.socket?.remoteAddress ||
+         'unknown';
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -70,11 +77,26 @@ export const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account, profile, email, credentials }) {
       try {
         // Enhanced security checks during sign-in
         if (!user.email || !user.name) {
           console.error('Missing required user data:', { user, account });
+          
+          // ✅ LOG FAILED LOGIN - MISSING DATA
+          await securityMonitor.logSecurityEvent({
+            type: 'FAILED_LOGIN',
+            severity: 'MEDIUM',
+            email: user.email || 'unknown',
+            metadata: {
+              reason: 'MISSING_USER_DATA',
+              provider: account?.provider,
+              hasEmail: !!user.email,
+              hasName: !!user.name,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
           return false;
         }
 
@@ -82,6 +104,19 @@ export const authOptions: NextAuthOptions = {
         const isLegitimate = await validateSignInAttempt(user.email, account?.provider);
         if (!isLegitimate) {
           console.error('Suspicious sign-in attempt blocked:', user.email);
+          
+          // ✅ LOG SUSPICIOUS ACTIVITY
+          await securityMonitor.logSecurityEvent({
+            type: 'SUSPICIOUS_ACTIVITY',
+            severity: 'HIGH',
+            email: user.email,
+            metadata: {
+              reason: 'SUSPICIOUS_SIGNIN_PATTERN',
+              provider: account?.provider,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
           return false;
         }
 
@@ -89,18 +124,71 @@ export const authOptions: NextAuthOptions = {
         const signInAllowed = await checkSignInRateLimit(user.email);
         if (!signInAllowed) {
           console.error('Sign-in rate limit exceeded:', user.email);
+          
+          // ✅ LOG RATE LIMIT EXCEEDED
+          await securityMonitor.logSecurityEvent({
+            type: 'RATE_LIMIT_EXCEEDED',
+            severity: 'MEDIUM',
+            email: user.email,
+            metadata: {
+              reason: 'SIGNIN_RATE_LIMIT',
+              provider: account?.provider,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
           return false;
         }
 
         const userId = await ensureUserExists(user);
         if (!userId) {
           console.error('Failed to create/find user:', user.email);
+          
+          // ✅ LOG FAILED LOGIN - USER CREATION FAILED
+          await securityMonitor.logSecurityEvent({
+            type: 'FAILED_LOGIN',
+            severity: 'HIGH',
+            email: user.email,
+            metadata: {
+              reason: 'USER_CREATION_FAILED',
+              provider: account?.provider,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
           return false;
         }
+
+        // ✅ LOG SUCCESSFUL LOGIN
+        await securityMonitor.logSecurityEvent({
+          type: 'SUCCESSFUL_LOGIN',
+          severity: 'LOW',
+          userId: userId,
+          email: user.email,
+          metadata: {
+            provider: account?.provider,
+            isNewUser: !userId, // True if user was just created
+            timestamp: new Date().toISOString()
+          }
+        });
 
         return true;
       } catch (error) {
         console.error('Sign-in callback error:', error);
+        
+        // ✅ LOG FAILED LOGIN - SYSTEM ERROR
+        await securityMonitor.logSecurityEvent({
+          type: 'FAILED_LOGIN',
+          severity: 'HIGH',
+          email: user.email || 'unknown',
+          metadata: {
+            reason: 'SYSTEM_ERROR',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            provider: account?.provider,
+            timestamp: new Date().toISOString()
+          }
+        });
+        
         return false;
       }
     },
@@ -148,14 +236,40 @@ export const authOptions: NextAuthOptions = {
 
           if (userData.error || !userData.data) {
             console.error('User data not found');
-            // Return empty session to force re-authentication
+            
+            // ✅ LOG SUSPICIOUS ACTIVITY - MISSING USER DATA
+            await securityMonitor.logSecurityEvent({
+              type: 'SUSPICIOUS_ACTIVITY',
+              severity: 'HIGH',
+              userId: token.userId as string,
+              email: session.user?.email || 'unknown',
+              metadata: {
+                reason: 'USER_DATA_NOT_FOUND',
+                sessionId: token.sessionId,
+                timestamp: new Date().toISOString()
+              }
+            });
+            
             return { ...session, user: { ...session.user, id: '', tier: 'Free', reportsUsed: 0 } };
           }
 
           // Check if account is still active
           if (!userData.data.is_active) {
             console.error('Account deactivated');
-            // Return empty session to force re-authentication  
+            
+            // ✅ LOG ACCOUNT ACCESS ATTEMPT WHILE LOCKED
+            await securityMonitor.logSecurityEvent({
+              type: 'UNAUTHORIZED_ACCESS',
+              severity: 'HIGH',
+              userId: userData.data.id,
+              email: session.user?.email || 'unknown',
+              metadata: {
+                reason: 'ACCOUNT_DEACTIVATED',
+                sessionId: token.sessionId,
+                timestamp: new Date().toISOString()
+              }
+            });
+            
             return { ...session, user: { ...session.user, id: '', tier: 'Free', reportsUsed: 0 } };
           }
 
@@ -171,7 +285,20 @@ export const authOptions: NextAuthOptions = {
           session.user.resetDate = userData.data.reset_date;
         } catch (error) {
           console.error('Session callback error:', error);
-          // Return minimal session instead of empty object
+          
+          // ✅ LOG SESSION ERROR
+          await securityMonitor.logSecurityEvent({
+            type: 'SUSPICIOUS_ACTIVITY',
+            severity: 'MEDIUM',
+            userId: token.userId as string,
+            email: session.user?.email || 'unknown',
+            metadata: {
+              reason: 'SESSION_CALLBACK_ERROR',
+              error: error instanceof Error ? error.message : 'Unknown error',
+              timestamp: new Date().toISOString()
+            }
+          });
+          
           return { ...session, user: { ...session.user, id: '', tier: 'Free', reportsUsed: 0 } };
         }
       }
@@ -179,12 +306,6 @@ export const authOptions: NextAuthOptions = {
       return session;
     }
   },
-
-  // Remove pages configuration to keep popup behavior
-  // pages: {
-  //   signIn: '/auth/signin',
-  //   error: '/auth/error',
-  // },
 
   // Security events logging
   events: {
@@ -209,6 +330,21 @@ export const authOptions: NextAuthOptions = {
         user: message.token?.email,
         timestamp: new Date().toISOString()
       });
+
+      // ✅ LOG SIGN OUT EVENT
+      if (message.token?.email) {
+        await securityMonitor.logSecurityEvent({
+          type: 'SUCCESSFUL_LOGIN', // Using as closest match for sign out
+          severity: 'LOW',
+          userId: message.token.userId as string,
+          email: message.token.email as string,
+          metadata: {
+            action: 'SIGN_OUT',
+            sessionId: message.token.sessionId,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
 
       // Invalidate session in database
       if (message.token?.userId && message.token?.sessionId) {
@@ -288,184 +424,183 @@ async function validateSignInAttempt(email: string, provider?: string): Promise<
         .select('metadata')
         .eq('event_type', 'SIGN_IN')
         .eq('email', email)
-        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-        .limit(5);
+       .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+       .limit(5);
 
-      if (recentSignIns && recentSignIns.length > 0) {
-        const providers = recentSignIns.map(log => log.metadata?.provider).filter(Boolean);
-        if (providers.length > 0 && !providers.includes(provider)) {
-          // Log suspicious provider change
-          await logSecurityEvent('SUSPICIOUS_PROVIDER_CHANGE', {
-            email,
-            oldProvider: providers[0],
-            newProvider: provider
-          });
-        }
-      }
-    }
+     if (recentSignIns && recentSignIns.length > 0) {
+       const providers = recentSignIns.map(log => log.metadata?.provider).filter(Boolean);
+       if (providers.length > 0 && !providers.includes(provider)) {
+         // Log suspicious provider change
+         await logSecurityEvent('SUSPICIOUS_PROVIDER_CHANGE', {
+           email,
+           oldProvider: providers[0],
+           newProvider: provider
+         });
+       }
+     }
+   }
 
-    return true;
-  } catch (error) {
-    console.error('Sign-in validation error:', error);
-    return true; // Allow sign-in if validation fails
-  }
+   return true;
+ } catch (error) {
+   console.error('Sign-in validation error:', error);
+   return true; // Allow sign-in if validation fails
+ }
 }
 
 async function checkSignInRateLimit(email: string): Promise<boolean> {
-  try {
-    const { data: attempts } = await supabaseAdmin
-      .from('security_logs')
-      .select('*')
-      .eq('email', email)
-      .in('event_type', ['SIGN_IN', 'FAILED_SIGN_IN'])
-      .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString());
+ try {
+   const { data: attempts } = await supabaseAdmin
+     .from('security_logs')
+     .select('*')
+     .eq('email', email)
+     .in('event_type', ['SIGN_IN', 'FAILED_SIGN_IN'])
+     .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString());
 
-    return !attempts || attempts.length < 10; // Max 10 attempts per 15 minutes
-  } catch (error) {
-    console.error('Rate limit check error:', error);
-    return true; // Allow if check fails
-  }
+   return !attempts || attempts.length < 10; // Max 10 attempts per 15 minutes
+ } catch (error) {
+   console.error('Rate limit check error:', error);
+   return true; // Allow if check fails
+ }
 }
 
 async function createSecureSession(userId: string, sessionId: string): Promise<void> {
-  try {
-    await supabaseAdmin
-      .from('user_sessions')
-      .insert({
-        user_id: userId,
-        session_id: sessionId,
-        created_at: new Date().toISOString(),
-        last_activity: new Date().toISOString(),
-        is_active: true
-      });
-  } catch (error) {
-    console.error('Session creation error:', error);
-  }
+ try {
+   await supabaseAdmin
+     .from('user_sessions')
+     .insert({
+       user_id: userId,
+       session_id: sessionId,
+       created_at: new Date().toISOString(),
+       last_activity: new Date().toISOString(),
+       is_active: true
+     });
+ } catch (error) {
+   console.error('Session creation error:', error);
+ }
 }
 
 async function validateSession(userId: string, sessionId: string): Promise<boolean> {
-  try {
-    const { data } = await supabaseAdmin
-      .from('user_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('session_id', sessionId)
-      .eq('is_active', true)
-      .single();
+ try {
+   const { data } = await supabaseAdmin
+     .from('user_sessions')
+     .select('*')
+     .eq('user_id', userId)
+     .eq('session_id', sessionId)
+     .eq('is_active', true)
+     .single();
 
-    return !!data;
-  } catch (error) {
-    console.error('Session validation error:', error);
-    return false;
-  }
+   return !!data;
+ } catch (error) {
+   console.error('Session validation error:', error);
+   return false;
+ }
 }
 
 async function invalidateSession(userId: string, sessionId: string): Promise<void> {
-  try {
-    await supabaseAdmin
-      .from('user_sessions')
-      .update({ is_active: false, ended_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('session_id', sessionId);
-  } catch (error) {
-    console.error('Session invalidation error:', error);
-  }
+ try {
+   await supabaseAdmin
+     .from('user_sessions')
+     .update({ is_active: false, ended_at: new Date().toISOString() })
+     .eq('user_id', userId)
+     .eq('session_id', sessionId);
+ } catch (error) {
+   console.error('Session invalidation error:', error);
+ }
 }
 
 async function updateSessionActivity(userId: string): Promise<void> {
-  try {
-    await supabaseAdmin
-      .from('user_sessions')
-      .update({ last_activity: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('is_active', true);
-  } catch (error) {
-    console.error('Session activity update error:', error);
-  }
+ try {
+   await supabaseAdmin
+     .from('user_sessions')
+     .update({ last_activity: new Date().toISOString() })
+     .eq('user_id', userId)
+     .eq('is_active', true);
+ } catch (error) {
+   console.error('Session activity update error:', error);
+ }
 }
 
 async function logSecurityEvent(eventType: string, metadata: any): Promise<void> {
-  try {
-    await supabaseAdmin
-      .from('security_logs')
-      .insert({
-        event_type: eventType,
-        metadata,
-        created_at: new Date().toISOString(),
-        email: metadata.email,
-        user_id: metadata.userId,
-        ip_address: metadata.ip
-      });
-  } catch (error) {
-    console.error('Security logging error:', error);
-  }
+ try {
+   await supabaseAdmin
+     .from('security_logs')
+     .insert({
+       event_type: eventType,
+       metadata,
+       created_at: new Date().toISOString(),
+       email: metadata.email,
+       user_id: metadata.userId,
+       ip_address: metadata.ip
+     });
+ } catch (error) {
+   console.error('Security logging error:', error);
+ }
 }
 
 async function ensureUserExists(user: any): Promise<string | null> {
-  // Implementation from your existing code with additional security checks
-  try {
-    const { data: existingUser } = await supabaseAdmin
-      .from('users')
-      .select('id, tier, is_active')
-      .eq('email', user.email)
-      .single();
+ try {
+   const { data: existingUser } = await supabaseAdmin
+     .from('users')
+     .select('id, tier, is_active')
+     .eq('email', user.email)
+     .single();
 
-    if (existingUser) {
-      // Check if account is active
-      if (!existingUser.is_active) {
-        await logSecurityEvent('INACTIVE_ACCOUNT_ACCESS', {
-          email: user.email,
-          userId: existingUser.id
-        });
-        return null;
-      }
+   if (existingUser) {
+     // Check if account is active
+     if (!existingUser.is_active) {
+       await logSecurityEvent('INACTIVE_ACCOUNT_ACCESS', {
+         email: user.email,
+         userId: existingUser.id
+       });
+       return null;
+     }
 
-      return existingUser.id;
-    }
+     return existingUser.id;
+   }
 
-    // Create new user with security defaults
-    const { data: newUser, error } = await supabaseAdmin
-      .from('users')
-      .insert({
-        email: user.email,
-        name: user.name,
-        image: user.image,
-        tier: 'Free',
-        reports_used: 0,
-        reset_date: new Date().toISOString(),
-        is_active: true,
-        created_at: new Date().toISOString(),
-        last_activity: new Date().toISOString()
-      })
-      .select('id')
-      .single();
+   // Create new user with security defaults
+   const { data: newUser, error } = await supabaseAdmin
+     .from('users')
+     .insert({
+       email: user.email,
+       name: user.name,
+       image: user.image,
+       tier: 'Free',
+       reports_used: 0,
+       reset_date: new Date().toISOString(),
+       is_active: true,
+       created_at: new Date().toISOString(),
+       last_activity: new Date().toISOString()
+     })
+     .select('id')
+     .single();
 
-    if (error) {
-      console.error('User creation error:', error);
-      return null;
-    }
+   if (error) {
+     console.error('User creation error:', error);
+     return null;
+   }
 
-    await logSecurityEvent('USER_CREATED', {
-      email: user.email,
-      userId: newUser.id
-    });
+   await logSecurityEvent('USER_CREATED', {
+     email: user.email,
+     userId: newUser.id
+   });
 
-    return newUser.id;
-  } catch (error) {
-    console.error('Error in ensureUserExists:', error);
-    return null;
-  }
+   return newUser.id;
+ } catch (error) {
+   console.error('Error in ensureUserExists:', error);
+   return null;
+ }
 }
 
 async function getUserByEmail(email: string) {
-  const { data, error } = await supabaseAdmin
-    .from('users')
-    .select('*')
-    .eq('email', email)
-    .single();
+ const { data, error } = await supabaseAdmin
+   .from('users')
+   .select('*')
+   .eq('email', email)
+   .single();
 
-  if (error) return null;
-  return data;
+ if (error) return null;
+ return data;
 }
 
 export default NextAuth(authOptions);
