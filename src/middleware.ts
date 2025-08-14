@@ -51,19 +51,82 @@ export async function middleware(request: NextRequest) {
   
   response.headers.set('Content-Security-Policy', csp);
 
+  // 🔒 NEW: Restrict access to security endpoints
+  if (pathname.startsWith('/api/security/')) {
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    });
+    
+    // Only allow admin users to access security endpoints
+    const isAdmin = token?.email?.endsWith('@gradelylabs.com') || 
+                   token?.email === 'admin@gradelylabs.com' ||
+                   token?.email === 'security@gradelylabs.com';
+    
+    if (!isAdmin) {
+      console.warn(`🔒 Blocked non-admin access to security endpoint: ${pathname} from ${getClientIP(request)}`);
+      return new NextResponse('Access Denied', { status: 403 });
+    }
+  }
+
+  // 🔒 NEW: Block direct access to deprecated security views
+  if (pathname.startsWith('/api/') && request.url.includes('security_dashboard')) {
+    console.warn(`Blocked access to deprecated security_dashboard from IP: ${getClientIP(request)}`);
+    return new NextResponse('Endpoint Deprecated', { status: 410 });
+  }
+
+  // 🔒 NEW: Enhanced admin dashboard protection
+  if (pathname.startsWith('/admin')) {
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    });
+    
+    const isAdmin = token?.email?.endsWith('@gradelylabs.com') || 
+                   token?.email === 'admin@gradelylabs.com' ||
+                   token?.email === 'security@gradelylabs.com';
+    
+    if (!isAdmin) {
+      console.warn(`🔒 Blocked non-admin access to admin area: ${pathname} from ${getClientIP(request)}`);
+      
+      // Log security incident
+      const ip = getClientIP(request);
+      const userAgent = request.headers.get('user-agent') || '';
+      
+      // Could add security logging here if needed
+      console.error('SECURITY: Unauthorized admin access attempt', {
+        ip,
+        userAgent,
+        pathname,
+        userEmail: token?.email || 'unauthenticated',
+        timestamp: new Date().toISOString()
+      });
+      
+      return new NextResponse('Access Denied', { status: 403 });
+    }
+  }
+
   // 3. Rate Limiting for sensitive paths
   if (pathname.startsWith('/api/')) {
     const ip = getClientIP(request);
     const rateLimitResult = await checkGlobalRateLimit(ip, pathname);
     
     if (!rateLimitResult.allowed) {
+      console.warn(`🔒 Rate limit exceeded for ${ip} on ${pathname}`);
       return new NextResponse(
-        JSON.stringify({ error: 'Rate limit exceeded' }),
+        JSON.stringify({ 
+          error: 'Rate limit exceeded',
+          retryAfter: 60,
+          message: 'Too many requests. Please wait and try again.'
+        }),
         {
           status: 429,
           headers: {
             'Content-Type': 'application/json',
             'Retry-After': '60',
+            'X-RateLimit-Limit': '60',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': (Math.ceil(Date.now() / 1000) + 60).toString()
           },
         }
       );
@@ -94,40 +157,67 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 5. Admin Path Protection
-  if (pathname.startsWith('/admin')) {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    const isAdmin = token?.email?.endsWith('@gradelylabs.com');
-    
-    if (!isAdmin) {
-      return new NextResponse('Access Denied', { status: 403 });
-    }
-  }
-
-  // 6. Block suspicious paths
+  // 5. Block suspicious paths
   const suspiciousPaths = [
     '/.env',
     '/config',
-    '/admin',
     '/.git',
     '/wp-admin',
     '/phpmyadmin',
     '/xmlrpc.php',
-    '/.well-known/security.txt'
+    '/.well-known/security.txt',
+    '/admin.php',
+    '/admin/',
+    '/administrator',
+    '/wp-login.php',
+    '/wp-config.php'
   ];
 
   if (suspiciousPaths.some(path => pathname.startsWith(path))) {
     // Log security event
     const ip = getClientIP(request);
-    console.warn(`Blocked suspicious path access: ${pathname} from IP: ${ip}`);
+    const userAgent = request.headers.get('user-agent') || '';
+    
+    console.warn(`🔒 Blocked suspicious path access: ${pathname} from IP: ${ip}`);
+    
+    // Log detailed security incident
+    console.error('SECURITY: Suspicious path access attempt', {
+      ip,
+      userAgent,
+      pathname,
+      timestamp: new Date().toISOString(),
+      referer: request.headers.get('referer') || '',
+      method: request.method
+    });
+    
     return new NextResponse('Not Found', { status: 404 });
   }
 
-  // 7. File Upload Path Security
+  // 🔒 NEW: Enhanced file upload path security
   if (pathname.startsWith('/api/upload')) {
     const contentLength = request.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > 25 * 1024 * 1024) {
+      console.warn(`🔒 Blocked oversized upload: ${contentLength} bytes from ${getClientIP(request)}`);
       return new NextResponse('Payload too large', { status: 413 });
+    }
+
+    // Check for suspicious file upload patterns
+    const contentType = request.headers.get('content-type') || '';
+    if (contentType.includes('executable') || contentType.includes('script')) {
+      console.warn(`🔒 Blocked suspicious content type: ${contentType} from ${getClientIP(request)}`);
+      return new NextResponse('Invalid file type', { status: 400 });
+    }
+  }
+
+  // 🔒 NEW: Monitor for potential CSRF attacks
+  if (request.method === 'POST' && pathname.startsWith('/api/')) {
+    const origin = request.headers.get('origin');
+    const referer = request.headers.get('referer');
+    const expectedOrigin = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    
+    if (origin && !origin.includes(expectedOrigin.replace(/https?:\/\//, ''))) {
+      console.warn(`🔒 Potential CSRF attack blocked: origin ${origin} for ${pathname}`);
+      return new NextResponse('Invalid origin', { status: 403 });
     }
   }
 
@@ -145,6 +235,7 @@ async function checkGlobalRateLimit(
   const limits = {
     '/api/upload': { requests: 10, window: 60000 }, // 10 per minute
     '/api/auth': { requests: 5, window: 300000 }, // 5 per 5 minutes
+    '/api/security/': { requests: 20, window: 60000 }, // 20 per minute for security endpoints
     '/api/': { requests: 100, window: 60000 }, // 100 per minute general
   };
 

@@ -42,6 +42,55 @@ interface SecurityAlert {
   timestamp: Date;
 }
 
+// 🔒 NEW: Admin helper function
+export async function isCurrentUserAdmin(userEmail?: string): Promise<boolean> {
+  if (!userEmail) return false;
+  
+  try {
+    const { data } = await supabaseAdmin.rpc('is_admin_user');
+    return data || false;
+  } catch (error) {
+    console.error('Admin check failed:', error);
+    // Fallback check
+    return userEmail.endsWith('@gradelylabs.com') || 
+           userEmail === 'admin@gradelylabs.com' ||
+           userEmail === 'security@gradelylabs.com';
+  }
+}
+
+// 🔒 NEW: Enhanced user security checks
+export async function checkUserSecurity(email: string): Promise<{
+  isActive: boolean;
+  isLocked: boolean;
+  lockReason?: string;
+  lockUntil?: string;
+}> {
+  try {
+    const { data: userStatus } = await supabaseAdmin
+      .from('users')
+      .select('is_active, locked_until, failed_login_count')
+      .eq('email', email)
+      .single();
+
+    if (!userStatus) {
+      return { isActive: false, isLocked: true, lockReason: 'User not found' };
+    }
+
+    const isLocked = userStatus.locked_until && 
+                    new Date(userStatus.locked_until) > new Date();
+
+    return {
+      isActive: userStatus.is_active || false,
+      isLocked: isLocked || false,
+      lockReason: isLocked ? 'Account temporarily locked' : undefined,
+      lockUntil: userStatus.locked_until
+    };
+  } catch (error) {
+    console.error('User security check failed:', error);
+    return { isActive: false, isLocked: true, lockReason: 'Security check failed' };
+  }
+}
+
 export class SecurityMonitor {
   private static instance: SecurityMonitor;
   private alertThresholds: Map<SecurityEventType, AlertConfig> = new Map();
@@ -165,6 +214,10 @@ export class SecurityMonitor {
         break;
       case 'RATE_LIMIT_EXCEEDED':
         await this.handleRateLimit(event);
+        break;
+      // 🔒 NEW: Handle unauthorized access for locked accounts
+      case 'UNAUTHORIZED_ACCESS':
+        await this.handleUnauthorizedAccess(event);
         break;
     }
   }
@@ -366,12 +419,27 @@ export class SecurityMonitor {
   private async handleFailedLogin(event: SecurityEvent): Promise<void> {
     if (event.email) {
       try {
-        await supabaseAdmin.rpc('log_failed_login', {
-          p_email: event.email,
-          p_ip: event.ipAddress || '0.0.0.0'
-        });
+        // Increment failed login count
+        await supabaseAdmin
+          .from('users')
+          .update({
+            failed_login_count: supabaseAdmin.rpc('increment_failed_logins', { user_email: event.email }),
+            updated_at: new Date().toISOString()
+          })
+          .eq('email', event.email);
+
+        // Check if we should lock the account
+        const { data: user } = await supabaseAdmin
+          .from('users')
+          .select('failed_login_count')
+          .eq('email', event.email)
+          .single();
+
+        if (user && user.failed_login_count >= 5) {
+          await this.lockUserAccount(event.email);
+        }
       } catch (error) {
-        console.error('Failed to log failed login:', error);
+        console.error('Failed to handle failed login:', error);
       }
     }
   }
@@ -384,6 +452,27 @@ export class SecurityMonitor {
 
     if (recentViolations >= 5 && event.ipAddress) {
       await this.banIPAddress(event.ipAddress);
+    }
+  }
+
+  // 🔒 NEW: Handle unauthorized access attempts
+  private async handleUnauthorizedAccess(event: SecurityEvent): Promise<void> {
+    if (event.email) {
+      // Log additional unauthorized access attempt
+      await supabaseAdmin
+        .from('security_logs')
+        .insert({
+          event_type: 'UNAUTHORIZED_ACCESS_DETAILED',
+          email: event.email,
+          ip_address: event.ipAddress,
+          user_agent: event.userAgent,
+          metadata: {
+            ...event.metadata,
+            automatic_logging: true,
+            timestamp: new Date().toISOString()
+          },
+          created_at: new Date().toISOString()
+        });
     }
   }
 }

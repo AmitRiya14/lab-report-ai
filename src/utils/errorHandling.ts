@@ -1,4 +1,4 @@
-// utils/errorHandling.ts
+// utils/errorHandling.ts - Enhanced with security logging
 import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
 export type ErrorType = 'network' | 'server' | 'data' | 'parse' | 'usage_limit' | 'unknown';
@@ -16,10 +16,56 @@ interface ErrorLike {
 }
 
 /**
+ * 🔒 NEW: Enhanced error handler with security logging
+ */
+export const handleSecureError = async (
+  error: Error | ErrorLike | unknown,
+  router: AppRouterInstance,
+  context?: { 
+    usageInfo?: UsageInfo;
+    userEmail?: string;
+    endpoint?: string;
+    userId?: string;
+  }
+) => {
+  console.error('Handling secure error:', error);
+
+  // 🔒 NEW: Log security-relevant errors
+  if (context?.userEmail && context?.endpoint) {
+    try {
+      await fetch('/api/security/log-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            name: error instanceof Error ? error.name : 'Unknown'
+          },
+          userEmail: context.userEmail,
+          userId: context.userId,
+          endpoint: context.endpoint,
+          timestamp: new Date().toISOString(),
+          userAgent: typeof window !== 'undefined' ? navigator.userAgent : '',
+          url: typeof window !== 'undefined' ? window.location.href : '',
+          errorType: 'CLIENT_ERROR',
+          severity: 'MEDIUM'
+        })
+      });
+    } catch (logError) {
+      console.warn('Failed to log security error:', logError);
+    }
+  }
+
+  // Continue with existing error handling
+  handleError(error, router, context);
+};
+
+/**
  * Handle different types of errors and redirect appropriately
  */
 export const handleError = (
-  error: Error | ErrorLike | unknown, // Replace 'any' with this union type
+  error: Error | ErrorLike | unknown,
   router: AppRouterInstance, 
   context?: { usageInfo?: UsageInfo }
 ) => {
@@ -81,7 +127,8 @@ export const handleError = (
  */
 export const handleApiError = async (
   response: Response, 
-  router: AppRouterInstance
+  router: AppRouterInstance,
+  context?: { userEmail?: string; endpoint?: string }
 ) => {
   try {
     const errorData = await response.json();
@@ -94,6 +141,26 @@ export const handleApiError = async (
       localStorage.setItem('lastError', 'usage_limit');
       router.push('/error?type=usage_limit');
       return;
+    }
+
+    // 🔒 NEW: Log API errors for security monitoring
+    if (context?.userEmail && context?.endpoint) {
+      await fetch('/api/security/log-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: {
+            message: `API Error ${response.status}: ${errorData.error || 'Unknown'}`,
+            status: response.status,
+            endpoint: context.endpoint
+          },
+          userEmail: context.userEmail,
+          endpoint: context.endpoint,
+          timestamp: new Date().toISOString(),
+          errorType: 'API_ERROR',
+          severity: response.status >= 500 ? 'HIGH' : 'MEDIUM'
+        })
+      }).catch(() => {}); // Silent fail for logging
     }
 
     // Server errors
@@ -192,10 +259,122 @@ export const getUsageLimitColor = (usage: UsageInfo): {
 };
 
 /**
+ * 🔒 NEW: Enhanced security error reporting
+ */
+export const reportSecurityIncident = async (
+  incident: {
+    type: 'SUSPICIOUS_ACTIVITY' | 'POTENTIAL_ATTACK' | 'SECURITY_VIOLATION';
+    description: string;
+    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    userEmail?: string;
+    additionalData?: Record<string, any>;
+  }
+) => {
+  try {
+    await fetch('/api/security/report-incident', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...incident,
+        timestamp: new Date().toISOString(),
+        userAgent: typeof window !== 'undefined' ? navigator.userAgent : '',
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        sessionId: typeof window !== 'undefined' ? sessionStorage.getItem('sessionId') : null
+      })
+    });
+  } catch (error) {
+    console.error('Failed to report security incident:', error);
+  }
+};
+
+/**
+ * 🔒 NEW: Check for suspicious client-side behavior
+ */
+export const detectSuspiciousActivity = () => {
+  if (typeof window === 'undefined') return;
+
+  const suspiciousPatterns = [
+    // Detect developer tools usage
+    () => {
+      const devtools = /./;
+      devtools.toString = function() {
+        reportSecurityIncident({
+          type: 'SUSPICIOUS_ACTIVITY',
+          description: 'Developer tools detected',
+          severity: 'LOW'
+        });
+        return 'Developer tools detected';
+      };
+      console.log('%c', devtools);
+    },
+
+    // Detect rapid repeated requests
+    () => {
+      const requestTimes: number[] = [];
+      const originalFetch = window.fetch;
+      
+      window.fetch = async (...args) => {
+        const now = Date.now();
+        requestTimes.push(now);
+        
+        // Keep only requests from last minute
+        const recentRequests = requestTimes.filter(time => now - time < 60000);
+        
+        if (recentRequests.length > 50) {
+          reportSecurityIncident({
+            type: 'POTENTIAL_ATTACK',
+            description: `Rapid requests detected: ${recentRequests.length} in 1 minute`,
+            severity: 'HIGH',
+            additionalData: { requestCount: recentRequests.length }
+          });
+        }
+        
+        return originalFetch(...args);
+      };
+    }
+  ];
+
+  // Apply detection patterns
+  suspiciousPatterns.forEach(pattern => {
+    try {
+      pattern();
+    } catch (error) {
+      console.warn('Suspicious activity detection error:', error);
+    }
+  });
+};
+
+/**
  * Clear error and usage data (useful for cleanup)
  */
 export const clearErrorData = () => {
   localStorage.removeItem('lastError');
   localStorage.removeItem('lastUsageInfo');
   localStorage.removeItem('currentUsage');
+};
+
+/**
+ * 🔒 NEW: Initialize client-side security monitoring
+ */
+export const initializeClientSecurity = () => {
+  if (typeof window === 'undefined') return;
+
+  // Start suspicious activity detection
+  detectSuspiciousActivity();
+
+  // Monitor for suspicious localStorage manipulation
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = function(key: string, value: string) {
+    if (key.includes('admin') || key.includes('token') || key.includes('secret')) {
+      reportSecurityIncident({
+        type: 'SECURITY_VIOLATION',
+        description: `Suspicious localStorage access: ${key}`,
+        severity: 'MEDIUM',
+        additionalData: { key, valueLength: value.length }
+      });
+    }
+    return originalSetItem.call(this, key, value);
+  };
+
+  console.log('🔒 Client-side security monitoring initialized');
 };

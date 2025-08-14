@@ -11,7 +11,7 @@ import { createSecureHandler } from '@/lib/middleware';
 import { FileValidator } from '@/lib/security/fileValidation';
 import { withRateLimit, RATE_LIMITS, withDDoSProtection } from "@/lib/middleware/rateLimit";
 import { trackUsage } from "@/lib/server/usage-tracking";
-import { securityMonitor } from '@/lib/security/monitoring'; // ✅ ADD THIS IMPORT
+import { securityMonitor, checkUserSecurity } from '@/lib/security/monitoring'; // ✅ Enhanced import
 
 export const config = {
   api: {
@@ -189,7 +189,71 @@ async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
     console.log('✅ Authenticated user:', session.user.email);
     req.headers['x-user-id'] = session.user.email;
 
-    // Check usage limits using the new tracking service
+    // 🔒 NEW: Enhanced security checks
+    const userEmail = session.user.email;
+    const clientIP = getClientIP(req);
+
+    // Check if account is locked or inactive
+    const userSecurity = await checkUserSecurity(userEmail);
+    
+    if (!userSecurity.isActive || userSecurity.isLocked) {
+      console.log('❌ Account security check failed:', userSecurity);
+      
+      await securityMonitor.logSecurityEvent({
+        type: 'UNAUTHORIZED_ACCESS',
+        severity: 'HIGH',
+        email: userEmail,
+        ipAddress: clientIP,
+        userAgent: req.headers['user-agent'] as string,
+        metadata: {
+          reason: userSecurity.isLocked ? 'ACCOUNT_LOCKED' : 'ACCOUNT_INACTIVE',
+          lockReason: userSecurity.lockReason,
+          lockUntil: userSecurity.lockUntil,
+          endpoint: '/api/upload',
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      return res.status(403).json({ 
+        error: 'Account suspended',
+        message: userSecurity.lockReason || 'Your account has been temporarily suspended. Contact support.',
+        contactSupport: true
+      });
+    }
+
+    // 🔒 NEW: Check for excessive recent uploads (additional rate limiting)
+    const recentUploads = await supabaseAdmin
+      .from('security_logs')
+      .select('created_at')
+      .eq('email', userEmail)
+      .contains('metadata', { action: 'report_generated' })
+      .gte('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+    if (recentUploads.data && recentUploads.data.length >= 5) {
+      console.log('❌ User upload rate limit exceeded:', userEmail);
+      
+      await securityMonitor.logSecurityEvent({
+        type: 'RATE_LIMIT_EXCEEDED',
+        severity: 'MEDIUM',
+        email: userEmail,
+        ipAddress: clientIP,
+        metadata: {
+          reason: 'USER_UPLOAD_RATE_LIMIT',
+          recentUploads: recentUploads.data.length,
+          timeWindow: '1 hour',
+          endpoint: '/api/upload',
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      return res.status(429).json({
+        error: 'Upload rate limit exceeded',
+        message: 'You are uploading files too frequently. Please wait before trying again.',
+        retryAfter: 3600 // 1 hour
+      });
+    }
+
+    // Check usage limits using the existing tracking service
     const usageCheck = await trackUsage(session.user.email, {
       operation: 'UPLOAD',
       checkOnly: true
@@ -208,7 +272,7 @@ async function uploadHandler(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    console.log('✅ Usage updated:', usageCheck.usage);
+    console.log('✅ Security checks passed, usage verified:', usageCheck.usage);
 
     // Process files
     const form = formidable({ 
@@ -390,6 +454,7 @@ Generate a complete, professional lab report:`;
             reportTitle: generatedTitle,
             reportLength: cleanedReport.length,
             filesProcessed: uploadedFiles.length,
+            securityChecksPass: true, // 🔒 NEW: Indicate security checks passed
             timestamp: new Date().toISOString()
           }
         });
@@ -431,6 +496,29 @@ Generate a complete, professional lab report:`;
 
   } catch (error) {
     console.error('💥 Upload API error:', error);
+
+    // 🔒 NEW: Log system-level errors for security monitoring
+    let session: any = null;
+    try {
+      session = await getServerSession(req, res, authOptions);
+    } catch {}
+
+    if (session?.user?.email) {
+      await securityMonitor.logSecurityEvent({
+        type: 'API_ABUSE',
+        severity: 'HIGH',
+        email: session.user.email,
+        ipAddress: getClientIP(req),
+        userAgent: req.headers['user-agent'] as string,
+        metadata: {
+          error: error instanceof Error ? error.message : 'Unknown system error',
+          endpoint: '/api/upload',
+          errorType: 'SYSTEM_ERROR',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     return res.status(500).json({ 
       error: 'Internal server error',
       message: 'An unexpected error occurred. Please try again.'
