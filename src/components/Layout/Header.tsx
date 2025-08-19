@@ -1,7 +1,8 @@
-// src/components/Layout/Header.tsx - Fixed session type
+// src/components/Layout/Header.tsx - Updated with functional Settings icon
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'next-auth/react'; // Import Session type
+import { signOut } from 'next-auth/react';
+import Link from 'next/link';
 import {Session} from 'next-auth';
 import { Settings, Wand2, User, LogOut, ChevronDown, AlertTriangle, Crown } from 'lucide-react';
 import { getCurrentUsage, isAtUsageLimit, isNearUsageLimit } from '@/utils/errorHandling';
@@ -13,7 +14,7 @@ interface HeaderProps {
     current: number;
     limit: number;
   };
-  session?: Session | null; // Use the proper NextAuth Session type
+  session?: Session | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -171,10 +172,14 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Settings Icon */}
-        <button className="icon-button">
+        {/* Settings Icon - Now functional */}
+        <Link 
+          href="/settings"
+          className="icon-button"
+          title="Settings"
+        >
           <Settings size={20} />
-        </button>
+        </Link>
         
         {/* User Profile with Dropdown */}
         <div className="relative">
@@ -261,10 +266,14 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               
               <div className="p-2">
-                <button className="flex items-center gap-3 w-full px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors">
+                <Link 
+                  href="/settings"
+                  className="flex items-center gap-3 w-full px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  onClick={() => setShowUserMenu(false)}
+                >
                   <Settings size={16} className="text-gray-500" />
                   <span className="text-sm">Settings</span>
-                </button>
+                </Link>
                 <button 
                   onClick={handleSignOut}
                   className="flex items-center gap-3 w-full px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors text-red-600"

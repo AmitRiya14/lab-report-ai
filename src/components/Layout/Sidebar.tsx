@@ -1,6 +1,7 @@
-// components/Layout/Sidebar.tsx - Updated with Usage Handling
+// src/components/Layout/Sidebar.tsx - Updated with functional Help & Settings
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { 
   Upload, 
   FileText, 
@@ -267,13 +268,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <FileText size={16} /> Report Editing
         </button>
         
-        <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
+        {/* Updated Settings Button - Now functional */}
+        <Link 
+          href="/settings"
+          className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors"
+        >
           <Settings size={16} /> Settings
-        </button>
+        </Link>
         
-        <button className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors">
+        {/* Updated Help Button - Now functional */}
+        <Link 
+          href="/help"
+          className="flex items-center gap-3 text-gray-600 hover:text-cyan-600 hover:bg-gray-50 rounded-xl px-4 py-2 w-full text-left transition-colors"
+        >
           <HelpCircle size={16} /> Help
-        </button>
+        </Link>
       </nav>
 
       {/* Usage Card - Show before Previous Reports */}
