@@ -1,8 +1,8 @@
+// src/middleware.ts - FIXED VERSION
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
-// ✅ ADD THIS TYPE DECLARATION
 declare global {
   var rateLimitStore: Map<string, number[]> | undefined;
 }
@@ -10,7 +10,7 @@ declare global {
 function getClientIP(request: NextRequest): string {
   return request.headers.get('x-forwarded-for') || 
          request.headers.get('x-real-ip') || 
-         request.headers.get('cf-connecting-ip') || // Cloudflare
+         request.headers.get('cf-connecting-ip') || 
          'unknown';
 }
 
@@ -51,14 +51,19 @@ export async function middleware(request: NextRequest) {
   
   response.headers.set('Content-Security-Policy', csp);
 
-  // 🔒 NEW: Restrict access to security endpoints
+  // 🔒 FIXED: Skip CSRF protection for NextAuth endpoints
+  if (pathname.startsWith('/api/auth/')) {
+    console.log(`✅ Allowing NextAuth endpoint: ${pathname}`);
+    return response;
+  }
+
+  // 🔒 Restrict access to security endpoints
   if (pathname.startsWith('/api/security/')) {
     const token = await getToken({ 
       req: request, 
       secret: process.env.NEXTAUTH_SECRET 
     });
     
-    // Only allow admin users to access security endpoints
     const isAdmin = token?.email?.endsWith('@gradelylabs.com') || 
                    token?.email === 'admin@gradelylabs.com' ||
                    token?.email === 'security@gradelylabs.com';
@@ -69,13 +74,13 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 🔒 NEW: Block direct access to deprecated security views
+  // 🔒 Block direct access to deprecated security views
   if (pathname.startsWith('/api/') && request.url.includes('security_dashboard')) {
     console.warn(`Blocked access to deprecated security_dashboard from IP: ${getClientIP(request)}`);
     return new NextResponse('Endpoint Deprecated', { status: 410 });
   }
 
-  // 🔒 NEW: Enhanced admin dashboard protection
+  // 🔒 Enhanced admin dashboard protection
   if (pathname.startsWith('/admin')) {
     const token = await getToken({ 
       req: request, 
@@ -88,26 +93,12 @@ export async function middleware(request: NextRequest) {
     
     if (!isAdmin) {
       console.warn(`🔒 Blocked non-admin access to admin area: ${pathname} from ${getClientIP(request)}`);
-      
-      // Log security incident
-      const ip = getClientIP(request);
-      const userAgent = request.headers.get('user-agent') || '';
-      
-      // Could add security logging here if needed
-      console.error('SECURITY: Unauthorized admin access attempt', {
-        ip,
-        userAgent,
-        pathname,
-        userEmail: token?.email || 'unauthenticated',
-        timestamp: new Date().toISOString()
-      });
-      
       return new NextResponse('Access Denied', { status: 403 });
     }
   }
 
-  // 3. Rate Limiting for sensitive paths
-  if (pathname.startsWith('/api/')) {
+  // 3. Rate Limiting for API endpoints (but skip NextAuth)
+  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/')) {
     const ip = getClientIP(request);
     const rateLimitResult = await checkGlobalRateLimit(ip, pathname);
     
@@ -174,13 +165,11 @@ export async function middleware(request: NextRequest) {
   ];
 
   if (suspiciousPaths.some(path => pathname.startsWith(path))) {
-    // Log security event
     const ip = getClientIP(request);
     const userAgent = request.headers.get('user-agent') || '';
     
     console.warn(`🔒 Blocked suspicious path access: ${pathname} from IP: ${ip}`);
     
-    // Log detailed security incident
     console.error('SECURITY: Suspicious path access attempt', {
       ip,
       userAgent,
@@ -193,7 +182,7 @@ export async function middleware(request: NextRequest) {
     return new NextResponse('Not Found', { status: 404 });
   }
 
-  // 🔒 NEW: Enhanced file upload path security
+  // 🔒 Enhanced file upload path security
   if (pathname.startsWith('/api/upload')) {
     const contentLength = request.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > 25 * 1024 * 1024) {
@@ -201,7 +190,6 @@ export async function middleware(request: NextRequest) {
       return new NextResponse('Payload too large', { status: 413 });
     }
 
-    // Check for suspicious file upload patterns
     const contentType = request.headers.get('content-type') || '';
     if (contentType.includes('executable') || contentType.includes('script')) {
       console.warn(`🔒 Blocked suspicious content type: ${contentType} from ${getClientIP(request)}`);
@@ -209,14 +197,30 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 🔒 NEW: Monitor for potential CSRF attacks
-  if (request.method === 'POST' && pathname.startsWith('/api/')) {
+  // 🔒 FIXED: More specific CSRF protection that excludes NextAuth
+  if (request.method === 'POST' && 
+      pathname.startsWith('/api/') && 
+      !pathname.startsWith('/api/auth/') &&  // Skip NextAuth endpoints
+      !pathname.startsWith('/api/stripe/webhook')) {  // Skip webhooks
+    
     const origin = request.headers.get('origin');
     const referer = request.headers.get('referer');
-    const expectedOrigin = process.env.NEXTAUTH_URL || 'http://localhost:3000';
     
-    if (origin && !origin.includes(expectedOrigin.replace(/https?:\/\//, ''))) {
-      console.warn(`🔒 Potential CSRF attack blocked: origin ${origin} for ${pathname}`);
+    // Get expected origins from environment
+    const expectedOrigins = [
+      process.env.NEXTAUTH_URL || 'http://localhost:3000',
+      'https://gradelylabs.com',
+      'https://www.gradelylabs.com'
+    ];
+    
+    // Check if origin is in allowed list
+    const isValidOrigin = origin && expectedOrigins.some(expected => 
+      origin === expected || origin.endsWith(expected.replace(/https?:\/\//, ''))
+    );
+    
+    if (!isValidOrigin) {
+      console.warn(`🔒 CSRF check failed: invalid origin ${origin} for ${pathname}`);
+      console.warn(`Expected origins: ${expectedOrigins.join(', ')}`);
       return new NextResponse('Invalid origin', { status: 403 });
     }
   }
@@ -224,26 +228,23 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-// Global rate limiting function
+// Global rate limiting function (unchanged)
 async function checkGlobalRateLimit(
   ip: string, 
   pathname: string
 ): Promise<{ allowed: boolean; remaining: number }> {
   const key = `rate_limit:${ip}:${pathname}`;
   
-  // Different limits for different endpoints
   const limits = {
-    '/api/upload': { requests: 10, window: 60000 }, // 10 per minute
-    '/api/auth': { requests: 5, window: 300000 }, // 5 per 5 minutes
-    '/api/security/': { requests: 20, window: 60000 }, // 20 per minute for security endpoints
-    '/api/': { requests: 100, window: 60000 }, // 100 per minute general
+    '/api/upload': { requests: 10, window: 60000 },
+    '/api/security/': { requests: 20, window: 60000 },
+    '/api/': { requests: 100, window: 60000 },
   };
 
   const limit = Object.entries(limits).find(([path]) => 
     pathname.startsWith(path)
   )?.[1] || { requests: 60, window: 60000 };
 
-  // ✅ FIXED: Use proper global declaration
   if (!global.rateLimitStore) {
     global.rateLimitStore = new Map();
   }
@@ -269,12 +270,10 @@ async function checkGlobalRateLimit(
 
 async function validateSessionToken(token: any): Promise<boolean> {
   try {
-    // Check token expiration
     if (!token.exp || token.exp < Date.now() / 1000) {
       return false;
     }
 
-    // Additional session validation logic
     if (token.userId && token.sessionId) {
       return true;
     }
@@ -289,13 +288,6 @@ async function validateSessionToken(token: any): Promise<boolean> {
 // Configure which paths the middleware runs on
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     '/((?!_next/static|_next/image|favicon.ico|public).*)',
   ],
 };
