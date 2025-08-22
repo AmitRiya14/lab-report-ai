@@ -125,7 +125,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 4. Authentication Protection
-  if (pathname.startsWith('/report') || pathname.startsWith('/dashboard')) {
+  if (pathname.startsWith('/dashboard')) {
     const token = await getToken({ 
       req: request, 
       secret: process.env.NEXTAUTH_SECRET 
