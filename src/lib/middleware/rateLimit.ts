@@ -1,3 +1,4 @@
+// src/lib/middleware/rateLimit.ts - FIXED VERSION with better Redis fallback
 import { NextApiRequest, NextApiResponse } from 'next';
 import { Redis } from '@upstash/redis';
 import { securityMonitor } from '@/lib/security/monitoring';
@@ -21,22 +22,33 @@ function getClientIP(req: NextApiRequest): string {
 export class RateLimiter {
   private redis: Redis | null = null;
   private memoryStore: Map<string, { count: number; resetTime: number }> = new Map();
-  private useRedis: boolean;
+  private useRedis: boolean = false;
+  private redisConnectionFailed: boolean = false;
 
   constructor() {
-    this.useRedis = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
-    
-    if (this.useRedis) {
-      this.redis = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-      });
+    // Only try Redis if we have valid environment variables
+    if (process.env.UPSTASH_REDIS_REST_URL && 
+        process.env.UPSTASH_REDIS_REST_TOKEN &&
+        process.env.UPSTASH_REDIS_REST_URL.startsWith('https://')) {
+      try {
+        this.redis = new Redis({
+          url: process.env.UPSTASH_REDIS_REST_URL,
+          token: process.env.UPSTASH_REDIS_REST_TOKEN,
+        });
+        this.useRedis = true;
+        console.log('✅ Redis rate limiter initialized');
+      } catch (error) {
+        console.warn('⚠️ Redis initialization failed, using memory store:', error);
+        this.redisConnectionFailed = true;
+        this.useRedis = false;
+      }
+    } else {
+      console.log('📝 Redis not configured, using memory store for rate limiting');
+      this.useRedis = false;
     }
 
     // Clean up memory store every 5 minutes
-    if (!this.useRedis) {
-      setInterval(() => this.cleanupMemoryStore(), 5 * 60 * 1000);
-    }
+    setInterval(() => this.cleanupMemoryStore(), 5 * 60 * 1000);
   }
 
   async checkLimit(key: string, config: RateLimitConfig): Promise<{
@@ -47,8 +59,15 @@ export class RateLimiter {
   }> {
     const now = Date.now();
 
-    if (this.useRedis && this.redis) {
-      return this.checkRedisLimit(key, config, now);
+    // If Redis connection failed before, skip Redis and use memory
+    if (this.useRedis && this.redis && !this.redisConnectionFailed) {
+      try {
+        return await this.checkRedisLimit(key, config, now);
+      } catch (error) {
+        console.warn('⚠️ Redis rate limit failed, falling back to memory:', error);
+        this.redisConnectionFailed = true; // Don't try Redis again for this instance
+        return this.checkMemoryLimit(key, config, now);
+      }
     } else {
       return this.checkMemoryLimit(key, config, now);
     }
@@ -66,14 +85,17 @@ export class RateLimiter {
       // Count current requests
       pipeline.zcard(key);
       
-      // Add current request - FIXED FORMAT
+      // Add current request with score and unique member
       pipeline.zadd(key, { score: now, member: `${now}-${Math.random()}` });
       
       // Set expiration
       pipeline.expire(key, Math.ceil(config.windowMs / 1000));
       
       const results = await pipeline.exec();
-      const currentCount = (results[1] as number) || 0;
+      
+      // Handle pipeline results safely
+      const currentCount = Array.isArray(results) && results[1] ? 
+        (typeof results[1] === 'number' ? results[1] : 0) : 0;
       
       const allowed = currentCount < config.requests;
       const remaining = Math.max(0, config.requests - currentCount - 1);
@@ -86,8 +108,8 @@ export class RateLimiter {
         total: config.requests
       };
     } catch (error) {
-      console.warn('Redis rate limit failed, falling back to memory:', error);
-      return this.checkMemoryLimit(key, config, now);
+      console.warn('Redis operation failed:', error);
+      throw error; // Let the caller handle the fallback
     }
   }
 
@@ -122,10 +144,30 @@ export class RateLimiter {
 
   private cleanupMemoryStore() {
     const now = Date.now();
+    let cleaned = 0;
+    
     for (const [key, entry] of this.memoryStore.entries()) {
       if (entry.resetTime <= now) {
         this.memoryStore.delete(key);
+        cleaned++;
       }
+    }
+    
+    if (cleaned > 0) {
+      console.log(`🧹 Cleaned up ${cleaned} expired rate limit entries`);
+    }
+  }
+
+  // Method to check Redis health
+  async healthCheck(): Promise<boolean> {
+    if (!this.redis || this.redisConnectionFailed) return false;
+    
+    try {
+      await this.redis.ping();
+      return true;
+    } catch {
+      this.redisConnectionFailed = true;
+      return false;
     }
   }
 }
@@ -145,6 +187,9 @@ export const RATE_LIMITS = {
   
   // General API - lenient
   GENERAL: { requests: 100, windowMs: 15 * 60 * 1000 }, // 100 requests per 15 minutes
+  
+  // Reports API - moderate
+  REPORTS: { requests: 50, windowMs: 15 * 60 * 1000 }, // 50 requests per 15 minutes
 } as const;
 
 export const withRateLimit = (
@@ -180,7 +225,7 @@ export const withRateLimit = (
           
           const ip = getClientIP(req);
           
-          // ✅ LOG RATE LIMIT VIOLATION WITH SECURITY MONITORING
+          // Log rate limit violation with security monitoring
           await securityMonitor.logSecurityEvent({
             type: 'RATE_LIMIT_EXCEEDED',
             severity: 'MEDIUM',
@@ -192,12 +237,12 @@ export const withRateLimit = (
               remaining: result.remaining,
               limit: config.requests,
               key: key,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              rateLimiterUsed: rateLimiter.redisConnectionFailed ? 'memory' : 'redis'
             }
           });
           
-          // Log rate limit violation
-          console.warn(`Rate limit exceeded for ${key}`, {
+          console.warn(`🔒 Rate limit exceeded for ${key}`, {
             endpoint: req.url,
             method: req.method,
             userAgent: req.headers['user-agent'],
@@ -219,14 +264,14 @@ export const withRateLimit = (
         return handler(req, res);
       } catch (error) {
         console.error('Rate limiting error:', error);
-        // Don't block request if rate limiting fails
+        // Don't block request if rate limiting fails - fail open for availability
         return handler(req, res);
       }
     };
   };
 };
 
-// DDoS Protection
+// DDoS Protection - uses only memory store for simplicity
 const requestCounts = new Map<string, { count: number; firstRequest: number }>();
 const SUSPICIOUS_THRESHOLD = 50; // requests per minute
 const BAN_DURATION = 15 * 60 * 1000; // 15 minutes
@@ -241,7 +286,7 @@ export const withDDoSProtection = () => {
       // Check if IP is banned
       const banExpiry = bannedIPs.get(ip);
       if (banExpiry && now < banExpiry) {
-        console.warn(`Blocked request from banned IP: ${ip}`);
+        console.warn(`🚫 Blocked request from banned IP: ${ip}`);
         return res.status(403).json({ 
           error: 'Access denied',
           message: 'Your IP has been temporarily banned due to suspicious activity'
@@ -251,6 +296,7 @@ export const withDDoSProtection = () => {
       // Clean up expired bans
       if (banExpiry && now >= banExpiry) {
         bannedIPs.delete(ip);
+        console.log(`✅ Unbanned IP: ${ip}`);
       }
 
       // Track request rate
@@ -268,9 +314,9 @@ export const withDDoSProtection = () => {
             bannedIPs.set(ip, now + BAN_DURATION);
             requestCounts.delete(ip);
             
-            console.error(`IP banned for DDoS: ${ip}, ${current.count} requests in ${timeWindow}ms`);
+            console.error(`🚫 IP banned for DDoS: ${ip}, ${current.count} requests in ${timeWindow}ms`);
             
-            // ✅ LOG DDOS ATTACK
+            // Log DDoS attack
             await securityMonitor.logSecurityEvent({
               type: 'SUSPICIOUS_ACTIVITY',
               severity: 'CRITICAL',
@@ -297,14 +343,25 @@ export const withDDoSProtection = () => {
         }
       }
 
-      // Clean up old entries
-      for (const [key, value] of requestCounts.entries()) {
-        if (now - value.firstRequest > 60000) {
-          requestCounts.delete(key);
+      // Clean up old entries periodically
+      if (Math.random() < 0.01) { // 1% chance to clean up
+        for (const [key, value] of requestCounts.entries()) {
+          if (now - value.firstRequest > 60000) {
+            requestCounts.delete(key);
+          }
         }
       }
 
       return handler(req, res);
     };
+  };
+};
+
+// Export health check function
+export const checkRateLimiterHealth = async () => {
+  return {
+    redis: await rateLimiter.healthCheck(),
+    memory: true, // Memory store is always available
+    redisConnectionFailed: rateLimiter.redisConnectionFailed
   };
 };

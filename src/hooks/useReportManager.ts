@@ -1,4 +1,4 @@
-// src/hooks/useReportManager.ts
+// src/hooks/useReportManager.ts - FIXED VERSION with better error handling
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { marked } from 'marked';
@@ -62,6 +62,8 @@ export const useReportManager = (
 
   // Initialize from URL params if present
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     const urlParams = new URLSearchParams(window.location.search);
     const reportIdFromUrl = urlParams.get('reportId');
     
@@ -108,16 +110,32 @@ export const useReportManager = (
     setError(null);
 
     try {
-      const response = await fetch(`/api/reports/${reportId}`);
+      // FIXED: Use the correct API endpoint structure
+      const response = await fetch(`/api/reports/${reportId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
       
       if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Report not found');
-        } else if (response.status === 403) {
-          throw new Error('You do not have permission to access this report');
-        } else {
-          throw new Error('Failed to load report');
+        let errorMessage = 'Failed to load report';
+        
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // If can't parse error response, use status-based message
+          if (response.status === 404) {
+            errorMessage = 'Report not found';
+          } else if (response.status === 403) {
+            errorMessage = 'You do not have permission to access this report';
+          } else if (response.status === 405) {
+            errorMessage = 'Report loading service is unavailable';
+          }
         }
+        
+        throw new Error(errorMessage);
       }
 
       const reportData: ReportData = await response.json();
@@ -178,18 +196,24 @@ export const useReportManager = (
       setAutoSaveStatus('idle');
 
       // Update URL to reflect the loaded report
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set('reportId', reportId);
-      window.history.replaceState({}, '', currentUrl.toString());
+      if (typeof window !== 'undefined') {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('reportId', reportId);
+        window.history.replaceState({}, '', currentUrl.toString());
+      }
 
       console.log('✅ Report loaded successfully:', reportData.title);
 
     } catch (err) {
       console.error('Failed to load report:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load report');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load report';
+      setError(errorMessage);
       
       // Show user-friendly error
-      alert(`Failed to load report: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      alert(`Failed to load report: ${errorMessage}`);
+      
+      // Don't redirect to error page for report loading failures
+      // Instead, just log the error and let user try again
     } finally {
       setLoading(false);
     }
@@ -222,7 +246,8 @@ export const useReportManager = (
         metadata.rubricText = rubricText;
       }
 
-      const response = await fetch(`/api/reports/update/${currentReportId}`, {
+      // FIXED: Use the correct API endpoint structure
+      const response = await fetch(`/api/reports/${currentReportId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -235,7 +260,7 @@ export const useReportManager = (
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to save report');
       }
 
