@@ -1,4 +1,4 @@
-// components/Layout/index.tsx - Fixed version
+// components/Layout/index.tsx - Fixed version with Previous Reports
 import React from 'react';
 import { useSession } from 'next-auth/react';
 import { Header } from './Header';
@@ -15,6 +15,10 @@ interface LayoutProps {
     limit: number;
   };
   showHowToEdit?: boolean;
+  // Add these new props for Previous Reports functionality
+  onReportSelect?: (reportId: string) => void;
+  currentReportId?: string | null;
+  reportLoading?: boolean;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
@@ -22,7 +26,10 @@ export const Layout: React.FC<LayoutProps> = ({
   currentPage, 
   userTier, 
   usageInfo, 
-  showHowToEdit 
+  showHowToEdit,
+  onReportSelect,
+  currentReportId,
+  reportLoading
 }) => {
   const { data: session } = useSession();
   const { usage, loading } = useUsage();
@@ -62,6 +69,9 @@ export const Layout: React.FC<LayoutProps> = ({
             userTier={actualUserTier} 
             usageInfo={actualUsageInfo} 
             showHowToEdit={showHowToEdit}
+            onReportSelect={onReportSelect}
+            currentReportId={currentReportId}
+            reportLoading={reportLoading}
           />
           <main className="flex-1 bg-[#f9fdfc] overflow-y-auto">
             {children}

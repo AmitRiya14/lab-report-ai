@@ -8,6 +8,7 @@
  * - Rubric-based feedback system
  * - Version history and restore functionality
  * - Export capabilities for multiple formats
+ * - Previous reports management
  * 
  * Key Features:
  * - Inline text editing with Claude AI integration
@@ -15,6 +16,7 @@
  * - Accept/reject suggestions with visual feedback
  * - Chart.js integration for data visualization
  * - localStorage persistence for report data
+ * - Auto-save functionality for reports
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -22,7 +24,7 @@ import { Chart as ChartJS, registerables, ChartDataset } from "chart.js";
 ChartJS.register(...registerables);
 import { marked } from "marked";
 import { Layout } from "@/components/Layout";
-import { useRouter } from "next/navigation"; // ✅ ADD THIS IMPORT
+import { useRouter } from "next/navigation";
 import {
   Wand2,
   RefreshCw,
@@ -45,6 +47,7 @@ import {
 } from '@/utils/exportUtils';
 
 import { stripMarkdownSync } from '@/utils/textUtils';
+import { useReportManager } from "@/hooks/useReportManager";
 
 // ========================================
 // TYPE DEFINITIONS
@@ -75,19 +78,6 @@ type VersionHistoryEntry = {
 };
 
 // ========================================
-// UTILITY FUNCTIONS
-// ========================================
-
-/**
- * Strip markdown formatting from text for clean display
- * Used for real-time rubric feedback display without markdown artifacts
- * 
- * @param text - Text containing markdown formatting
- * @returns Clean text without markdown formatting
- */
-
-
-// ========================================
 // MAIN COMPONENT
 // ========================================
 
@@ -96,20 +86,6 @@ export default function ReportPage() {
   // STATE DECLARATIONS (organized by purpose)
   // ========================================
   
-
-/**
- * Handle navigation to upload page
- * const handleUploadNavigation = () => {
-  router.push("/"); // Navigate back to upload page
-};
- */
-
-
-// Get user info for layout
-  const userTier = 'Pro'; // This would come from your user context/state
-  const usageInfo = { current: 15, limit: 50 }; // This would come from your usage tracking
-
-
   // Basic report metadata
   const [title, setTitle] = useState("Lab Report");  
   const [name, setName] = useState("Student Name");
@@ -157,20 +133,44 @@ export default function ReportPage() {
     },
   ]);
 
-  const router = useRouter(); // ✅ ADD THIS
+  const router = useRouter();
 
   // ========================================
   // REFS (for DOM manipulation and chart management)
   // ========================================
   
   const chartRef = useRef<HTMLCanvasElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
+
+  // ========================================
+  // REPORT MANAGEMENT HOOK
+  // ========================================
+
+const {
+  currentReportId,
+  loading: reportLoading,
+  error: reportError,
+  loadReport,
+  saveCurrentReport,
+  hasUnsavedChanges,
+  setHasUnsavedChanges,
+  autoSaveStatus,
+  lastSaved,
+} = useReportManager(editorRef, setReportText, setTitle, setVersionHistory);
+
+  // Add this function to handle report selection
+  const handleReportSelect = async (reportId: string) => {
+    await loadReport(reportId);
+  };
+
+  // Get user info for layout
+  const userTier = 'Pro'; // This would come from your user context/state
+  const usageInfo = { current: 15, limit: 50 }; // This would come from your usage tracking
 
   // ========================================
   // CORE FUNCTIONALITY HANDLERS
   // ========================================
-
 
   /**
  * Copy report content to clipboard with clean formatting
@@ -906,7 +906,7 @@ Rewrite this report with improved academic tone while maintaining all content an
    * Loads all persisted data on component mount
    */
 useEffect(() => {
-  console.log("🔄 Loading persisted data from localStorage...");
+  console.log("🔥 Loading persisted data from localStorage...");
 
   localStorage.setItem('lastSuccessfulPage', '/report');
 
@@ -1198,13 +1198,44 @@ useEffect(() => {
     }
   }, [isStreaming, rubricFeedback, cleanRubric]);
 
+  /**
+   * KEYBOARD SHORTCUTS EFFECT
+   * Add Ctrl/Cmd + S to save manually
+   */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (hasUnsavedChanges && currentReportId) {
+          saveCurrentReport().catch(err => {
+            console.error('Manual save failed:', err);
+            alert('Failed to save report. Please try again.');
+          });
+        }
+      }
+    };
 
-  
-// ========================================
-// ALTERNATIVE VERSION: With more styling details
-// ========================================
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [hasUnsavedChanges, currentReportId, saveCurrentReport]);
 
+  /**
+   * BEFOREUNLOAD WARNING EFFECT
+   * Warn user about unsaved changes when leaving page
+   */
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
 
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // ========================================
   // RENDER JSX
@@ -1216,6 +1247,9 @@ useEffect(() => {
     userTier={userTier} 
     usageInfo={usageInfo}
     showHowToEdit={true}  // This adds the "How to Edit" box to left sidebar
+    onReportSelect={handleReportSelect}
+    currentReportId={currentReportId}
+    reportLoading={reportLoading}
   >
     {/* Main Content Area */}
     <div className="flex flex-1">
@@ -1287,12 +1321,63 @@ useEffect(() => {
             </div>
           </div>
 
+          {/* Auto-save Status Indicator */}
+          {currentReportId && (
+            <div className="bg-white shadow rounded-xl p-4 mb-4 border-l-4 border-blue-500">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${
+                      autoSaveStatus === 'saving' ? 'bg-yellow-500 animate-pulse' :
+                      autoSaveStatus === 'saved' ? 'bg-green-500' :
+                      autoSaveStatus === 'error' ? 'bg-red-500' :
+                      hasUnsavedChanges ? 'bg-orange-500' :
+                      'bg-gray-300'
+                    }`}></div>
+                    <span className="text-sm font-medium text-gray-700">
+                      {autoSaveStatus === 'saving' ? 'Saving...' :
+                       autoSaveStatus === 'saved' ? 'All changes saved' :
+                       autoSaveStatus === 'error' ? 'Save failed' :
+                       hasUnsavedChanges ? 'Unsaved changes' :
+                       'No changes'}
+                    </span>
+                  </div>
+                  
+                  {lastSaved && (
+                    <span className="text-xs text-gray-500">
+                      Last saved: {lastSaved.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  {hasUnsavedChanges && (
+                    <button
+                      onClick={saveCurrentReport}
+                      disabled={autoSaveStatus === 'saving'}
+                      className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      Save Now
+                    </button>
+                  )}
+                  
+                  <span className="text-xs text-gray-400">
+                    Report ID: {currentReportId.slice(-8)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Main Editor - ContentEditable Report Area */}
           <div
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
-            onInput={(e) => setReportText(e.currentTarget.innerHTML)}
+            onInput={(e) => {
+              setReportText(e.currentTarget.innerHTML);
+              setHasUnsavedChanges(true); // Track that user made changes
+            }}
             onMouseUp={handleHighlightEdit}
             className="prose prose-lg max-w-full p-6 bg-white shadow border border-blue-100"
             style={{
@@ -1585,4 +1670,3 @@ useEffect(() => {
   </Layout>
   );
 }
-

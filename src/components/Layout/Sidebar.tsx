@@ -1,6 +1,7 @@
 // src/components/Layout/Sidebar.tsx - Updated with functional Help & Settings
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { ReportsHistory } from '../ReportsHistory';
 import Link from 'next/link';
 import { 
   Upload, 
@@ -22,13 +23,20 @@ interface SidebarProps {
     limit: number;
   };
   showHowToEdit?: boolean;
+  // Add these new props
+  onReportSelect?: (reportId: string) => void;
+  currentReportId?: string | null;
+  reportLoading?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
   currentPage, 
   userTier = 'Free', 
   usageInfo,
-  showHowToEdit = false 
+  showHowToEdit = false,
+  onReportSelect,
+  currentReportId,
+  reportLoading = false 
 }) => {
   const router = useRouter();
 
@@ -66,13 +74,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleUpgradeClick = () => {
     router.push('/pricing');
   };
-
-  // Mock previous reports data
-  const previousReports = [
-    { id: "1", name: "BIOL", active: false },
-    { id: "2", name: "BIZO", active: false },
-    { id: "3", name: "Lab 4", active: false },
-  ];
 
   const renderUsageCard = () => {
     if (!currentUsage) return null;
@@ -288,19 +289,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Usage Card - Show before Previous Reports */}
       {renderUsageCard()}
 
-      {/* Previous Lab Reports */}
+      {/* Previous Lab Reports - Now Functional */}
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-700">Previous Reports</h3>
-        <div className="space-y-2">
-          {previousReports.map((report) => (
-            <button
-              key={report.id}
-              className="w-full text-left px-3 py-2 rounded-full bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-700 transition-colors"
-            >
-              {report.id} {report.name}
-            </button>
-          ))}
-        </div>
+        <ReportsHistory 
+          onReportSelect={onReportSelect || (() => {})}
+          currentReportId={currentReportId || undefined}
+        />
+        
+        {/* Loading indicator when switching reports */}
+        {reportLoading && (
+          <div className="flex items-center justify-center py-2">
+            <div className="animate-spin w-4 h-4 border-2 border-[#00e3ae] border-t-transparent rounded-full"></div>
+            <span className="ml-2 text-sm text-gray-600">Loading report...</span>
+          </div>
+        )}
       </div>
 
       {/* Profile Section */}

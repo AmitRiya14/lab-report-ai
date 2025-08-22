@@ -43,9 +43,9 @@ function stripMarkdownSync(text: string): string {
 }
 
 /**
- * Save report to Supabase
+ * Save report to Supabase and return the report ID
  */
-async function saveReport(userEmail: string, title: string, content: string): Promise<void> {
+async function saveReport(userEmail: string, title: string, content: string): Promise<string | null> {
   try {
     const { data: user } = await supabaseAdmin
       .from('users')
@@ -54,7 +54,7 @@ async function saveReport(userEmail: string, title: string, content: string): Pr
       .single();
 
     if (user) {
-      await supabaseAdmin
+      const { data: newReport, error } = await supabaseAdmin
         .from('reports')
         .insert({
           title,
@@ -62,12 +62,22 @@ async function saveReport(userEmail: string, title: string, content: string): Pr
           user_id: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        });
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Save report error:', error);
+        return null;
+      }
+
+      return newReport?.id || null;
     }
   } catch (error) {
     console.error('Save report error:', error);
-    // Don't fail the entire request if saving fails
+    return null;
   }
+  return null;
 }
 
 /**
@@ -438,8 +448,8 @@ Generate a complete, professional lab report:`;
           reportContent: cleanedReport
         });
 
-        // Save report to database
-        await saveReport(session.user.email, generatedTitle, cleanedReport);
+        // Save report to database and get the report ID
+        const reportId = await saveReport(session.user.email, generatedTitle, cleanedReport);
 
         // ✅ LOG SUCCESSFUL REPORT GENERATION
         await securityMonitor.logSecurityEvent({
@@ -455,6 +465,7 @@ Generate a complete, professional lab report:`;
             reportLength: cleanedReport.length,
             filesProcessed: uploadedFiles.length,
             securityChecksPass: true, // 🔒 NEW: Indicate security checks passed
+            reportId: reportId, // Include the report ID for tracking
             timestamp: new Date().toISOString()
           }
         });
@@ -466,7 +477,8 @@ Generate a complete, professional lab report:`;
           chartSpec: extractedChartSpec || chartSpec,
           rubric,
           title: generatedTitle,
-          usage: usageCheck.usage
+          usage: usageCheck.usage,
+          reportId: reportId // ✅ NEW: Include report ID in response
         });
 
       } catch (generationError) {
