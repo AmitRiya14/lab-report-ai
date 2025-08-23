@@ -1,3 +1,4 @@
+// 1. UPDATE YOUR EXISTING next.config.ts (ADD SEO IMPROVEMENTS)
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -8,7 +9,12 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
-  // Security headers
+  // SEO: Enable React strict mode and compression
+  reactStrictMode: true,
+  compress: true,
+  poweredByHeader: false,
+
+  // Security headers (your existing ones + SEO improvements)
   async headers() {
     return [
       {
@@ -43,22 +49,18 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Security: Disable x-powered-by header
-  poweredByHeader: false,
-
-  // Security: Enable compression
-  compress: true,
-
-  // Security: Image optimization settings
+  // Image optimization for SEO
   images: {
     domains: ['lh3.googleusercontent.com', 'googleusercontent.com'],
     dangerouslyAllowSVG: false,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    formats: ['image/webp', 'image/avif'], // Modern image formats for better performance
   },
 
-  // Security: Redirect HTTP to HTTPS in production
+  // SEO: Redirects (update your domain)
   async redirects() {
     return [
+      // Your existing HTTPS redirect
       ...(process.env.NODE_ENV === 'production' ? [{
         source: '/(.*)',
         has: [
@@ -68,13 +70,19 @@ const nextConfig: NextConfig = {
             value: 'http',
           },
         ],
-        destination: 'https://lab-report-ai.onrender.com/', // Replace with your actual domain
+        destination: 'https://gradelylabs.com/', // UPDATE THIS TO YOUR ACTUAL DOMAIN
         permanent: true,
       }] : []),
+      // SEO-friendly redirects
+      {
+        source: '/dashboard',
+        destination: '/',
+        permanent: false,
+      }
     ];
   },
 
-  // Security: Block suspicious paths
+  // Your existing security rewrites (keep as is)
   async rewrites() {
     return {
       beforeFiles: [
@@ -102,10 +110,9 @@ const nextConfig: NextConfig = {
     };
   },
 
-  // Webpack configuration for security
+  // Your existing webpack config (keep as is)
   webpack: (config, { isServer, dev }) => {
     if (!isServer) {
-      // Client-side security configurations
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -117,7 +124,6 @@ const nextConfig: NextConfig = {
       };
     }
 
-    // Security: Remove source maps in production
     if (!dev) {
       config.devtool = false;
     }
@@ -125,7 +131,6 @@ const nextConfig: NextConfig = {
     return config;
   },
 
-  // Experimental features for security
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse', 'sharp', 'canvas'],
   },

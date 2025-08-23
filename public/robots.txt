@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /debug/
+Disallow: /error/
+
+Sitemap: https://gradelylabs.com/sitemap.xml
