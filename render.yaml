@@ -1,0 +1,36 @@
+services:
+  # The Next.js Frontend Service
+  - type: web
+    name: lab-report-ai
+    env: docker
+    repo: https://github.com/AmitRiya14/lab-report-ai # Replace if your repo URL is different
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    domains:
+      - gradelylabs.com
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ML_SERVICE_URL
+        value: http://ml-service:8000
+      # IMPORTANT: Add all your other secrets (NEXTAUTH_URL, database keys, etc.)
+      # in the Render dashboard under the 'Environment' tab after creating the blueprint.
+      - key: NEXTAUTH_URL
+        value: https://gradelylabs.com # Use your custom domain here
+
+  # The Python ML Backend Service
+  - type: web
+    name: ml-service
+    env: docker
+    repo: https://github.com/AmitRiya14/lab-report-ai # Replace if your repo URL is different
+    dockerContext: ./ml-service
+    dockerfilePath: ./ml-service/Dockerfile
+    healthCheck:
+      path: /health
+    disks:
+      - name: ml-cache
+        mountPath: /app/.cache
+        sizeGB: 10
+    envVars:
+      - key: TRANSFORMERS_CACHE
+        value: /app/.cache
