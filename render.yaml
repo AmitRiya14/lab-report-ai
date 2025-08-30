@@ -26,8 +26,10 @@ services:
     healthCheckPath: /health
     envVars:
       - key: TRANSFORMERS_CACHE
-        value: /app/.cache
-    disks:
-      - name: ml-cache
-        mountPath: /app/.cache
-        sizeGB: 10
+        value: /app/.cache # This path matches the disk's mountPath
+
+# Top-level definition for all persistent disks in this Blueprint
+disks:
+  - name: ml-cache
+    mountPath: /app/.cache
+    sizeGB: 10
