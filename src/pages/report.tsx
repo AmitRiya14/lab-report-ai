@@ -1,7 +1,6 @@
 /**
  * Report Page Component
- * 
- * Main lab report editing interface with AI-powered features including:
+ * * Main lab report editing interface with AI-powered features including:
  * - ContentEditable report editor with real-time text editing
  * - AI-powered text suggestions with streaming responses
  * - Chart visualization from Excel data
@@ -9,14 +8,14 @@
  * - Version history and restore functionality
  * - Export capabilities for multiple formats
  * - Previous reports management
- * 
- * Key Features:
+ * * Key Features:
  * - Inline text editing with Claude AI integration
  * - Streaming text generation with real-time display
  * - Accept/reject suggestions with visual feedback
  * - Chart.js integration for data visualization
  * - localStorage persistence for report data
  * - Auto-save functionality for reports
+ * - ML-powered text humanization
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -39,6 +38,8 @@ import {
   CircleCheck,
   ChevronDown,
   Target, Copy, Check, Edit3, User,
+  Bot, // New icon for humanization
+  Sparkles,
 } from "lucide-react";
 import PromptPopover from "@/components/PromptModal";
 import { 
@@ -48,7 +49,8 @@ import {
 
 import { stripMarkdownSync } from '@/utils/textUtils';
 import { useReportManager } from "@/hooks/useReportManager";
-
+import { HumanizationPanel } from "@/components/HumanizationPanel"; // New import
+import { useHumanization } from "@/hooks/useHumanization";
 // ========================================
 // TYPE DEFINITIONS
 // ========================================
@@ -90,7 +92,6 @@ export default function ReportPage() {
   const [title, setTitle] = useState("Lab Report");  
   const [name, setName] = useState("Student Name");
   const [date] = useState(new Date().toLocaleDateString());
-  // Add these state variables to your component
   const [isEditingName, setIsEditingName] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   
@@ -103,10 +104,9 @@ export default function ReportPage() {
   const [rubricText, setRubricText] = useState("");
   const [manualText, setManualText] = useState("");
   const [cleanRubric] = useState("");
-  const [rubricAnalysis, setRubricAnalysis] = useState(""); // ✅ NEW: Separate state for Claude analysis
-  const [showOriginalRubric, setShowOriginalRubric] = useState(true); // ✅ NEW: Toggle for original rubric
+  const [rubricAnalysis, setRubricAnalysis] = useState("");
+  const [showOriginalRubric, setShowOriginalRubric] = useState(true);
 
-  
   // Modal and text selection state
   const [modalOpen, setModalOpen] = useState(false);
   const [popoverAnchor, setPopoverAnchor] = useState<DOMRect | null>(null);
@@ -121,6 +121,11 @@ export default function ReportPage() {
   const [streamingText, setStreamingText] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [streamingContainer, setStreamingContainer] = useState<HTMLElement | null>(null);
+  
+  // New ML humanization state
+  const [showHumanizationPanel, setShowHumanizationPanel] = useState(false);
+  const [humanizationResult, setHumanizationResult] = useState<string>('');
+  const [isHumanizing, setIsHumanizing] = useState(false);
   
   const chartInstanceRef = useRef<ChartJS | null>(null);
 
@@ -144,81 +149,79 @@ export default function ReportPage() {
   const savedRangeRef = useRef<Range | null>(null);
 
   // ========================================
-  // REPORT MANAGEMENT HOOK
+  // HOOKS
   // ========================================
 
-const {
-  currentReportId,
-  loading: reportLoading,
-  error: reportError,
-  loadReport,
-  saveCurrentReport,
-  hasUnsavedChanges,
-  setHasUnsavedChanges,
-  autoSaveStatus,
-  lastSaved,
-} = useReportManager(editorRef, setReportText, setTitle, setVersionHistory);
+  const {
+    currentReportId,
+    loading: reportLoading,
+    error: reportError,
+    loadReport,
+    saveCurrentReport,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    autoSaveStatus,
+    lastSaved,
+  } = useReportManager(editorRef, setReportText, setTitle, setVersionHistory);
 
-  // Add this function to handle report selection
-  const handleReportSelect = async (reportId: string) => {
-    await loadReport(reportId);
-  };
-
-  // Get user info for layout
-  const userTier = 'Pro'; // This would come from your user context/state
-  const usageInfo = { current: 15, limit: 50 }; // This would come from your usage tracking
+  const humanization = useHumanization({
+    onProgress: (message) => {
+      console.log('Humanization progress:', message);
+    },
+    onComplete: (humanizedText) => {
+      setHumanizationResult(humanizedText);
+      // Optionally auto-apply to editor
+      if (editorRef.current) {
+        editorRef.current.innerHTML = humanizedText;
+        setReportText(humanizedText);
+        setHasUnsavedChanges(true);
+      }
+    },
+    onError: (error) => {
+      console.error('Humanization error:', error);
+      alert(`Humanization failed: ${error}`);
+    }
+  });
 
   // ========================================
   // CORE FUNCTIONALITY HANDLERS
   // ========================================
 
-  /**
- * Copy report content to clipboard with clean formatting
- */
-const handleCopyReport = async () => {
-  const editor = editorRef.current;
-  if (!editor) {
-    alert("No report content to copy");
-    return;
-  }
+  const handleReportSelect = async (reportId: string) => {
+    await loadReport(reportId);
+  };
 
-  try {
-    // Get clean text content without edit suggestions
-    const cleanContent = editor.innerText || editor.textContent || "";
-    
-    // Create formatted text with title and student info
-    const fullReport = `${title}\n\nStudent: ${name}\nDate: ${date}\n\n${cleanContent}`;
-    
-    await navigator.clipboard.writeText(fullReport);
-    
-    // Show success feedback
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2000);
-    
-  } catch (error) {
-    console.error("Copy failed:", error);
-    alert("Failed to copy to clipboard. Please try again.");
-  }
-};
+  const userTier = 'Pro';
+  const usageInfo = { current: 15, limit: 50 };
 
-/**
- * Handle student name editing
- */
-const handleNameEdit = () => {
-  setIsEditingName(true);
-};
+  const handleCopyReport = async () => {
+    const editor = editorRef.current;
+    if (!editor) {
+      alert("No report content to copy");
+      return;
+    }
+    try {
+      const cleanContent = editor.innerText || editor.textContent || "";
+      const fullReport = `${title}\n\nStudent: ${name}\nDate: ${date}\n\n${cleanContent}`;
+      await navigator.clipboard.writeText(fullReport);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      console.error("Copy failed:", error);
+      alert("Failed to copy to clipboard. Please try again.");
+    }
+  };
 
-const handleNameSave = (newName: string) => {
-  setName(newName.trim() || "Student Name");
-  setIsEditingName(false);
-  localStorage.setItem("studentName", newName.trim() || "Student Name");
-};
+  const handleNameEdit = () => {
+    setIsEditingName(true);
+  };
 
-  /**
-   * Handle text selection and open editing modal
-   * Triggered when user highlights text in the contentEditable div
-   * Stores the selected range for later manipulation
-   */
+  const handleNameSave = (newName: string) => {
+    setName(newName.trim() || "Student Name");
+    setIsEditingName(false);
+    localStorage.setItem("studentName", newName.trim() || "Student Name");
+  };
+
   const handleHighlightEdit = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim();
@@ -228,101 +231,64 @@ const handleNameSave = (newName: string) => {
     if (text && rect && range) {
       setSelectedText(text);
       setPopoverAnchor(rect);
-      savedRangeRef.current = range.cloneRange(); // Store actual DOM range
-      
-      // Create preview text (truncate if too long for UI)
+      savedRangeRef.current = range.cloneRange();
       const words = text.split(/\s+/);
       setPreviewText(
         words.length > 10
           ? `${words.slice(0, 5).join(" ")} ... ${words.slice(-5).join(" ")}`
           : text
       );
-
       setModalOpen(true);
     }
   };
 
-  /**
-   * Apply AI-powered text edits with streaming display
-   * 
-   * Complex flow:
-   * 1. Validates range and editor references
-   * 2. Cleans up any existing edit suggestions
-   * 3. Creates streaming container in DOM
-   * 4. Makes API call to /api/edit-highlight
-   * 5. Processes streaming response in real-time
-   * 6. Adds accept/reject buttons when complete
-   * 7. Updates version history
-   * 
-   * @param prompt - User's editing instruction
-   */
   const applyDiff = async (prompt: string) => {
     setModalOpen(false);
-
     const range = savedRangeRef.current;
     const editor = editorRef.current;
-
     if (!range || !editor) {
       console.warn("Missing saved range or editor reference");
       return;
     }
-
-    // Step 1: Clean up any existing edit suggestions to prevent conflicts
     const existingBoxes = editor.querySelectorAll(".inline-action-box");
     existingBoxes.forEach(box => box.remove());
-
     const existingContainers = editor.querySelectorAll(".inline-edit-suggestion");
     existingContainers.forEach(container => {
       container.removeAttribute("data-processing");
     });
-
     const originalText = range.toString();
-    console.log("🚀 Starting edit streaming for:", originalText.substring(0, 50) + "...");
-
-    // Step 2: Create streaming container for live text updates
     const streamingSpan = document.createElement("span");
     streamingSpan.className = "inline-edit-suggestion animate-pulse";
     streamingSpan.setAttribute("data-original", encodeURIComponent(originalText));
-    streamingSpan.setAttribute("data-processing", "true"); // Prevent duplicate processing
+    streamingSpan.setAttribute("data-processing", "true");
     streamingSpan.innerHTML = '<span class="streaming-content text-gray-500 italic">Claude is rewriting...</span>';
-
-    // Step 3: Replace selected text with streaming container
     try {
-      range.extractContents(); // Just call it without storing
+      range.extractContents();
       range.insertNode(streamingSpan);
-      window.getSelection()?.removeAllRanges(); // Clear selection
+      window.getSelection()?.removeAllRanges();
     } catch (error) {
       console.error("Range manipulation error:", error);
       return;
     }
-
-    // Step 4: Set streaming state
     setStreamingContainer(streamingSpan);
     setIsEditStreaming(true);
     setStreamingText("");
-
     try {
-      // Step 5: Make API call to edit-highlight endpoint
       const response = await fetch("/api/edit-highlight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
           original: originalText,
-          fullReport: editor.innerText, // Full context for AI
+          fullReport: editor.innerText,
         }),
       });
-
       if (!response.ok) {
-        console.error(`Edit API error: ${response.status}`);
-        
-        // ✅ UPDATED: Specific error handling by status code
         if (response.status >= 500) {
           localStorage.setItem('lastError', 'server');
           router.push("/error?type=server");
           return;
         } else if (response.status === 429) {
-          // Rate limit - show in streaming container
           const contentSpan = streamingSpan.querySelector('.streaming-content');
           if (contentSpan) {
             contentSpan.innerHTML = '<span class="text-orange-600 font-medium">⚠️ Too many requests. Please wait and try again.</span>';
@@ -336,53 +302,34 @@ const handleNameSave = (newName: string) => {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
       }
-
-
-      // Step 6: Process streaming response
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = "";
       let buffer = "";
-
       const contentSpan = streamingSpan.querySelector('.streaming-content');
       if (!contentSpan) {
         throw new Error("Content span not found in streaming container");
       }
-
-      // Step 7: Stream processing loop
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          console.log("✅ Streaming completed successfully");
-          break;
-        }
-
+        if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
-        
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ""; // Keep incomplete line in buffer
-        
+        buffer = lines.pop() || "";
         for (const line of lines) {
           if (!line.trim() || !line.startsWith('data: ')) continue;
-          
           const dataStr = line.slice(6).trim();
           if (dataStr === '[DONE]') continue;
-          
           try {
             const parsed = JSON.parse(dataStr);
-            
             if (parsed.type === "content_block_delta" && parsed.delta?.text) {
               const newText = parsed.delta.text;
               accumulatedText += newText;
-              
-              // Step 8: Format text with basic markdown support
               let displayText = accumulatedText
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\*([^*]+)\*/g, '<em>$1</em>')
                 .replace(/`([^`]+)`/g, '<code class="bg-gray-200 px-1 rounded text-xs">$1</code>');
-              
-              // Handle paragraph breaks properly
               if (displayText.includes('\n\n')) {
                 const paragraphs = displayText.split('\n\n').filter(p => p.trim());
                 displayText = paragraphs.map(p => 
@@ -391,13 +338,9 @@ const handleNameSave = (newName: string) => {
               } else {
                 displayText = displayText.replace(/\n/g, '<br>');
               }
-              
-              // Step 9: Update display in real-time
               contentSpan.innerHTML = displayText || accumulatedText;
               contentSpan.className = 'streaming-content text-gray-800';
               setStreamingText(accumulatedText);
-              
-              // Controlled streaming speed for better UX
               await new Promise(resolve => setTimeout(resolve, 25));
             }
           } catch (parseError) {
@@ -405,16 +348,9 @@ const handleNameSave = (newName: string) => {
           }
         }
       }
-
-      // Step 10: Finalize streaming display
       if (streamingSpan && accumulatedText.trim()) {
-        console.log("✅ Finalizing stream with accept/reject buttons");
-        
-        // Remove pulsing animation
         streamingSpan.classList.remove("animate-pulse");
         streamingSpan.removeAttribute("data-processing");
-        
-        // Add accept/reject buttons after brief delay for smooth UX
         setTimeout(() => {
           if (!streamingSpan.querySelector(".inline-action-box")) {
             const actionBox = document.createElement("div");
@@ -426,8 +362,6 @@ const handleNameSave = (newName: string) => {
             streamingSpan.appendChild(actionBox);
           }
         }, 200);
-
-        // Step 11: Update version history
         setVersionHistory(prev => [
           {
             timestamp: new Date().toLocaleString(),
@@ -437,441 +371,313 @@ const handleNameSave = (newName: string) => {
           ...prev,
         ]);
       }
-
     } catch (err) {
       console.error("💥 Edit streaming error:", err);
-      
-      // ✅ UPDATED: Better error type detection
       if (err instanceof TypeError && err.message.includes('fetch')) {
         localStorage.setItem('lastError', 'network');
         router.push("/error?type=network");
       } else if (err instanceof Error && err.name === 'AbortError') {
-        // Request cancelled - show in streaming container
         const contentSpan = streamingSpan.querySelector('.streaming-content');
         if (contentSpan) {
           contentSpan.innerHTML = '<span class="text-gray-600 font-medium">Edit was cancelled.</span>';
         }
       } else {
-        // Show error in streaming container
         const contentSpan = streamingSpan.querySelector('.streaming-content');
         if (contentSpan) {
           contentSpan.innerHTML = `<span class="text-red-600 font-medium">❌ Error: ${err instanceof Error ? err.message : 'Unknown error'}</span>`;
         }
       }
-
       streamingSpan.classList.remove("animate-pulse");
       streamingSpan.removeAttribute("data-processing");
     } finally {
-      // Step 12: Clean up streaming state
       setIsEditStreaming(false);
       setStreamingContainer(null);
       savedRangeRef.current = null;
     }
   };
 
-  /**
-   * Analyze report completeness using rubric
-   * Streams feedback from Claude API for real-time display
-   * Uses rubric text and manual text for context-aware analysis
-   */
   const handleCheckCompleteness = async () => {
-  console.log("🚀 Starting rubric analysis...");
-  setRubricAnalysis(""); // ✅ Clear analysis, not the rubric feedback
-  setIsStreaming(true);
-
-  try {
-    const response = await fetch("/api/rubric", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        reportText, 
-        rubricText, 
-        manualText 
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Rubric API error: ${response.status}`);
-      
-      if (response.status >= 500) {
-        localStorage.setItem('lastError', 'server');
-        router.push("/error?type=server");
-        return;
-      } else if (response.status === 429) {
-        setRubricAnalysis("❌ Too many requests. Please wait a moment and try again.");
-        setIsStreaming(false);
-        return;
-      } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    }
-
-    // Process streaming rubric response
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let accumulatedText = "";
-    let accumulatedPlainText = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n');
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        
-        const jsonStr = trimmed.slice(6);
-        if (jsonStr === '[DONE]') continue;
-        
-        try {
-          const parsed = JSON.parse(jsonStr);
-          
-          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-            const newText = parsed.delta.text;
-            accumulatedText += newText;
-            
-            // Strip markdown for clean real-time display
-            const cleanText = stripMarkdownSync(accumulatedText);
-            accumulatedPlainText = cleanText;
-            setRubricAnalysis(cleanText); // ✅ Update analysis, not rubricFeedback
-          }
-        } catch (parseError) {
-          console.warn("⚠️ JSON parse error in rubric response:", parseError);
+    console.log("🚀 Starting rubric analysis...");
+    setRubricAnalysis("");
+    setIsStreaming(true);
+    try {
+      const response = await fetch("/api/rubric", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          reportText, 
+          rubricText, 
+          manualText 
+        }),
+      });
+      if (!response.ok) {
+        console.error(`Rubric API error: ${response.status}`);
+        if (response.status >= 500) {
+          localStorage.setItem('lastError', 'server');
+          router.push("/error?type=server");
+          return;
+        } else if (response.status === 429) {
+          setRubricAnalysis("❌ Too many requests. Please wait a moment and try again.");
+          setIsStreaming(false);
+          return;
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
       }
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = "";
+      let accumulatedPlainText = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const jsonStr = trimmed.slice(6);
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+              const newText = parsed.delta.text;
+              accumulatedText += newText;
+              const cleanText = stripMarkdownSync(accumulatedText);
+              accumulatedPlainText = cleanText;
+              setRubricAnalysis(cleanText);
+            }
+          } catch (parseError) {
+            console.warn("⚠️ JSON parse error in rubric response:", parseError);
+          }
+        }
+      }
+      if (accumulatedPlainText) {
+        localStorage.setItem("lastRubricAnalysis", accumulatedPlainText);
+      }
+    } catch (error) {
+      console.error("💥 Rubric analysis error:", error);
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        localStorage.setItem('lastError', 'network');
+        router.push("/error?type=network");
+      } else if (error instanceof Error && error.name === 'AbortError') {
+        setRubricAnalysis("Analysis was cancelled.");
+      } else {
+        setRubricAnalysis(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } finally {
+      setIsStreaming(false);
     }
+  };
 
-    // Store final cleaned result
-    if (accumulatedPlainText) {
-      localStorage.setItem("lastRubricAnalysis", accumulatedPlainText);
-    }
-
-  } catch (error) {
-    console.error("💥 Rubric analysis error:", error);
-
-    // Fix: Proper error type checking
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      localStorage.setItem('lastError', 'network');
-      router.push("/error?type=network");
-    } else if (error instanceof Error && error.name === 'AbortError') {
-      setRubricAnalysis("Analysis was cancelled.");
-    } else {
-      setRubricAnalysis(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  } finally {
-    setIsStreaming(false);
-  }
-};
-
-  /**
-   * Restore previous version from history
-   * Converts markdown to HTML if needed and updates editor
-   * 
-   * @param content - Version content to restore
-   */
   const handleRestore = async (content: string) => {
     if (!content || content.trim().length < 10) {
       console.warn("Empty restore content – skipping restoration");
       return;
     }
-
-    // Convert markdown to HTML if needed
     const html = content.includes("<p>") ? content : await marked.parse(content);
-
     setReportText(html);
     if (editorRef.current) {
       editorRef.current.innerHTML = html;
     }
   };
 
-  /**
-   * Export report in various formats
-   * Currently shows placeholder - would integrate with export libraries
-   * 
-   * @param format - Export format (PDF, DOCX, LaTeX, TXT)
-   */
   const handleExport = async (format: string) => {
-  const editor = editorRef.current;
-  if (!editor) {
-    alert("No report content to export");
-    return;
-  }
-
-  try {
-    switch (format) {
-      case "PDF":
-        await exportToAdvancedPDF(editor, title);
-        break;
-      case "DOCX":
-        await exportToWord(reportText, title, name, date);
-        break;
-      default:
-        alert(`Export format ${format} not implemented yet.`);
+    const editor = editorRef.current;
+    if (!editor) {
+      alert("No report content to export");
+      return;
     }
-  } catch (error) {
-    console.error("Export error:", error);
-    alert("Export failed. Please try again.");
-  }
-};
+    try {
+      switch (format) {
+        case "PDF":
+          await exportToAdvancedPDF(editor, title);
+          break;
+        case "DOCX":
+          await exportToWord(reportText, title, name, date);
+          break;
+        default:
+          alert(`Export format ${format} not implemented yet.`);
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+      alert("Export failed. Please try again.");
+    }
+  };
 
-
-  /**
- * Generic streaming function for full report regeneration
- * Handles streaming response and updates the entire editor content
- * 
- * @param prompt - The instruction prompt for Claude
- * @param actionType - Type of action for logging and UI feedback
- */
-const streamReportRegeneration = async (prompt: string, actionType: 'regenerate' | 'improve-tone') => {
-  const editor = editorRef.current;
-  if (!editor) {
-    console.error("Editor reference not found");
-    return;
-  }
-
-  console.log(`🚀 Starting ${actionType} with full report streaming...`);
-  
-  // Set loading state
-  setIsEditStreaming(true);
-  
-  // Show loading message in editor
-  const originalContent = editor.innerHTML;
-  editor.innerHTML = `
-    <div class="flex items-center justify-center py-12 text-gray-500">
-      <div class="text-center">
-        <div class="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-        <p class="text-lg font-medium">Claude is ${actionType === 'regenerate' ? 'regenerating your entire report' : 'improving the academic tone'}...</p>
-        <p class="text-sm mt-2">This may take a moment</p>
+  const streamReportRegeneration = async (prompt: string, actionType: 'regenerate' | 'improve-tone') => {
+    const editor = editorRef.current;
+    if (!editor) {
+      console.error("Editor reference not found");
+      return;
+    }
+    setIsEditStreaming(true);
+    const originalContent = editor.innerHTML;
+    editor.innerHTML = `
+      <div class="flex items-center justify-center py-12 text-gray-500">
+        <div class="text-center">
+          <div class="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p class="text-lg font-medium">Claude is ${actionType === 'regenerate' ? 'regenerating your entire report' : 'improving the academic tone'}...</p>
+          <p class="text-sm mt-2">This may take a moment</p>
+        </div>
       </div>
-    </div>
-  `;
-
-  try {
-    const response = await fetch("/api/edit-highlight", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        original: originalContent, // Send full content as context
-        fullReport: editor.innerText,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`${actionType} API error: ${response.status}`);
-      
-      if (response.status >= 500) {
-        localStorage.setItem('lastError', 'server');
-        router.push("/error?type=server");
-        return;
-      } else if (response.status === 429) {
+    `;
+    try {
+      const response = await fetch("/api/edit-highlight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          original: originalContent,
+          fullReport: editor.innerText,
+        }),
+      });
+      if (!response.ok) {
+        if (response.status >= 500) {
+          localStorage.setItem('lastError', 'server');
+          router.push("/error?type=server");
+          return;
+        } else if (response.status === 429) {
+          editor.innerHTML = `
+            <div class="flex items-center justify-center py-12 text-orange-600">
+              <div class="text-center">
+                <p class="text-lg font-medium">⚠️ Too many requests</p>
+                <p class="text-sm mt-2">Please wait a moment and try again</p>
+              </div>
+            </div>
+          `;
+          setTimeout(() => {
+            editor.innerHTML = originalContent;
+          }, 3000);
+          setIsEditStreaming(false);
+          return;
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      }
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = "";
+      let buffer = "";
+      editor.innerHTML = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6).trim();
+          if (dataStr === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+              const newText = parsed.delta.text;
+              accumulatedText += newText;
+              const htmlContent = await marked.parse(accumulatedText);
+              editor.innerHTML = htmlContent;
+              editor.scrollTop = editor.scrollHeight;
+              await new Promise(resolve => setTimeout(resolve, 30));
+            }
+          } catch (parseError) {
+            console.warn("⚠️ JSON parse error, skipping line:", parseError);
+          }
+        }
+      }
+      if (accumulatedText.trim()) {
+        const finalHtml = await marked.parse(accumulatedText);
+        editor.innerHTML = finalHtml;
+        setReportText(finalHtml);
+        localStorage.setItem("labReport", accumulatedText);
+        setVersionHistory(prev => [
+          {
+            timestamp: new Date().toLocaleString(),
+            summary: actionType === 'regenerate' ? 'Full report regeneration' : 'Academic tone improvement',
+            content: finalHtml,
+          },
+          ...prev,
+        ]);
+      }
+    } catch (err) {
+      console.error(`💥 ${actionType} streaming error:`, err);
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        localStorage.setItem('lastError', 'network');
+        router.push("/error?type=network");
+      } else if (err instanceof Error && err.name === 'AbortError') {
         editor.innerHTML = `
-          <div class="flex items-center justify-center py-12 text-orange-600">
+          <div class="flex items-center justify-center py-12 text-gray-600">
             <div class="text-center">
-              <p class="text-lg font-medium">⚠️ Too many requests</p>
-              <p class="text-sm mt-2">Please wait a moment and try again</p>
+              <p class="text-lg font-medium">${actionType} was cancelled</p>
+              <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Reload Page</button>
+            </div>
+          </div>
+        `;
+      } else {
+        editor.innerHTML = `
+          <div class="flex items-center justify-center py-12 text-red-600">
+            <div class="text-center">
+              <p class="text-lg font-medium">❌ Error during ${actionType}</p>
+              <p class="text-sm mt-2">${err instanceof Error ? err.message : 'Unknown error'}</p>
+              <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">Reload Page</button>
             </div>
           </div>
         `;
         setTimeout(() => {
           editor.innerHTML = originalContent;
-        }, 3000);
-        setIsEditStreaming(false);
-        return;
-      } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }, 5000);
       }
+    } finally {
+      setIsEditStreaming(false);
     }
+  };
 
-    // Process streaming response
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let accumulatedText = "";
-    let buffer = "";
-
-    // Clear editor for streaming content
-    editor.innerHTML = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        console.log(`✅ ${actionType} streaming completed successfully`);
-        break;
-      }
-
-      const chunk = decoder.decode(value, { stream: true });
-      buffer += chunk;
-      
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || "";
-      
-      for (const line of lines) {
-        if (!line.trim() || !line.startsWith('data: ')) continue;
-        
-        const dataStr = line.slice(6).trim();
-        if (dataStr === '[DONE]') continue;
-        
-        try {
-          const parsed = JSON.parse(dataStr);
-          
-          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-            const newText = parsed.delta.text;
-            accumulatedText += newText;
-            
-            // Convert markdown to HTML for display
-            const htmlContent = await marked.parse(accumulatedText);
-            editor.innerHTML = htmlContent;
-            
-            // Auto-scroll to bottom to show new content
-            editor.scrollTop = editor.scrollHeight;
-            
-            // Controlled streaming speed
-            await new Promise(resolve => setTimeout(resolve, 30));
-          }
-        } catch (parseError) {
-          console.warn("⚠️ JSON parse error, skipping line:", parseError);
-        }
-      }
+  const handleRegenerateReport = async () => {
+    const storedReport = localStorage.getItem("labReport") || "";
+    const storedChart = localStorage.getItem("chartSpec") || "";
+    const storedRubric = localStorage.getItem("rubricText") || "";
+    const storedManual = localStorage.getItem("manualText") || "";
+    if (!storedReport && !storedChart && !storedRubric && !storedManual) {
+      alert("Cannot regenerate: No lab data found. Please return to the upload page and upload your files again.");
+      router.push('/');
+      return;
     }
-
-    // Finalize the regeneration
-    if (accumulatedText.trim()) {
-      console.log(`✅ Finalizing ${actionType}`);
-      
-      // Convert final content to HTML
-      const finalHtml = await marked.parse(accumulatedText);
-      editor.innerHTML = finalHtml;
-      setReportText(finalHtml);
-      
-      // Save to localStorage
-      localStorage.setItem("labReport", accumulatedText);
-      
-      // Update version history
-      setVersionHistory(prev => [
-        {
-          timestamp: new Date().toLocaleString(),
-          summary: actionType === 'regenerate' ? 'Full report regeneration' : 'Academic tone improvement',
-          content: finalHtml,
-        },
-        ...prev,
-      ]);
-      
-      console.log(`✅ ${actionType} completed and saved`);
-    }
-
-  } catch (err) {
-    console.error(`💥 ${actionType} streaming error:`, err);
-    
-    // Fix: Proper error type checking
-    if (err instanceof TypeError && err.message.includes('fetch')) {
-      localStorage.setItem('lastError', 'network');
-      router.push("/error?type=network");
-    } else if (err instanceof Error && err.name === 'AbortError') {
-      editor.innerHTML = `
-        <div class="flex items-center justify-center py-12 text-gray-600">
-          <div class="text-center">
-            <p class="text-lg font-medium">${actionType} was cancelled</p>
-            <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Reload Page</button>
-          </div>
-        </div>
-      `;
-    } else {
-      // Show error and restore original content
-      editor.innerHTML = `
-        <div class="flex items-center justify-center py-12 text-red-600">
-          <div class="text-center">
-            <p class="text-lg font-medium">❌ Error during ${actionType}</p>
-            <p class="text-sm mt-2">${err instanceof Error ? err.message : 'Unknown error'}</p>
-            <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">Reload Page</button>
-          </div>
-        </div>
-      `;
-      
-      // Restore original content after a delay
-      setTimeout(() => {
-        editor.innerHTML = originalContent;
-      }, 5000);
-    }
-  } finally {
-    setIsEditStreaming(false);
-  }
-};
-
-/**
- * Handle full report regeneration
- * Uses the existing lab manual and data to create a completely new report
- */
-// Replace your existing handleRegenerateReport function with this:
-const handleRegenerateReport = async () => {
-  // Check what data we actually have available
-  const storedReport = localStorage.getItem("labReport") || "";
-  const storedChart = localStorage.getItem("chartSpec") || "";
-  const storedRubric = localStorage.getItem("rubricText") || "";
-  const storedManual = localStorage.getItem("manualText") || "";
-  
-  // If we have ANY data, we can regenerate
-  if (!storedReport && !storedChart && !storedRubric && !storedManual) {
-    alert("Cannot regenerate: No lab data found. Please return to the upload page and upload your files again.");
-    router.push('/');
-    return;
-  }
-
-  const confirmRegenerate = window.confirm(
-    "This will completely replace your current report with a new version based on your uploaded data. Continue?"
-  );
-  
-  if (!confirmRegenerate) return;
-
-  // Build prompt with available data
-  let regenerationPrompt = `Create a comprehensive lab report with all sections: Title, Abstract, Introduction, Methods, Results, Discussion, Conclusion, and References.
-
+    const confirmRegenerate = window.confirm(
+      "This will completely replace your current report with a new version based on your uploaded data. Continue?"
+    );
+    if (!confirmRegenerate) return;
+    let regenerationPrompt = `Create a comprehensive lab report with all sections: Title, Abstract, Introduction, Methods, Results, Discussion, Conclusion, and References.
 Use proper academic style and include detailed analysis.`;
-
-  if (storedManual) {
-    regenerationPrompt += `\n\nLab Manual:\n${storedManual}`;
-  }
-  
-  if (storedChart) {
-    try {
-      const chartData = JSON.parse(storedChart);
-      regenerationPrompt += `\n\nData: ${chartData.graphType} chart with ${chartData.series?.length || 0} data series`;
-    } catch {
-      console.warn("Could not parse chart data");
+    if (storedManual) {
+      regenerationPrompt += `\n\nLab Manual:\n${storedManual}`;
     }
-  }
-  
-  if (storedReport) {
-    regenerationPrompt += `\n\nCurrent report (for context):\n${storedReport.substring(0, 1000)}...`;
-  }
+    if (storedChart) {
+      try {
+        const chartData = JSON.parse(storedChart);
+        regenerationPrompt += `\n\nData: ${chartData.graphType} chart with ${chartData.series?.length || 0} data series`;
+      } catch {
+        console.warn("Could not parse chart data");
+      }
+    }
+    if (storedReport) {
+      regenerationPrompt += `\n\nCurrent report (for context):\n${storedReport.substring(0, 1000)}...`;
+    }
+    regenerationPrompt += `\n\nGenerate a completely new, comprehensive lab report.`;
+    await streamReportRegeneration(regenerationPrompt, 'regenerate');
+  };
 
-  regenerationPrompt += `\n\nGenerate a completely new, comprehensive lab report.`;
-
-  await streamReportRegeneration(regenerationPrompt, 'regenerate');
-};
-
-/**
- * Handle academic tone improvement
- * Improves the writing style while maintaining all content and structure
- */
-const handleImproveTone = async () => {
-  const currentContent = editorRef.current?.innerText || "";
-  
-  if (!currentContent || currentContent.trim().length < 100) {
-    alert("Cannot improve tone: Report content is too short or empty.");
-    return;
-  }
-
-  const confirmImprove = window.confirm(
-    "This will rewrite your entire report with improved academic tone and style. The content and structure will remain the same. Continue?"
-  );
-  
-  if (!confirmImprove) return;
-
-  const toneImprovementPrompt = `You are an academic writing expert. Your task is to improve the academic tone and writing style of the following lab report while preserving ALL content, data, results, and structure.
-
+  const handleImproveTone = async () => {
+    const currentContent = editorRef.current?.innerText || "";
+    if (!currentContent || currentContent.trim().length < 100) {
+      alert("Cannot improve tone: Report content is too short or empty.");
+      return;
+    }
+    const confirmImprove = window.confirm(
+      "This will rewrite your entire report with improved academic tone and style. The content and structure will remain the same. Continue?"
+    );
+    if (!confirmImprove) return;
+    const toneImprovementPrompt = `You are an academic writing expert. Your task is to improve the academic tone and writing style of the following lab report while preserving ALL content, data, results, and structure.
 Improvements to make:
 - Enhance academic vocabulary and terminology
 - Improve sentence structure and flow
@@ -881,81 +687,140 @@ Improvements to make:
 - Improve clarity and precision of scientific language
 - Maintain all data, numbers, and technical details exactly
 - Keep all section headings and overall structure
-
 IMPORTANT: 
 - Do NOT change any data, results, or findings
 - Do NOT add or remove any sections
 - Do NOT alter the core content or conclusions
 - ONLY improve the language, tone, and style
-
 Current Report Content:
 ${currentContent}
-
 Rewrite this report with improved academic tone while maintaining all content and structure exactly.`;
+    await streamReportRegeneration(toneImprovementPrompt, 'improve-tone');
+  };
 
-  await streamReportRegeneration(toneImprovementPrompt, 'improve-tone');
-};
+  /**
+   * Handle ML-powered text humanization for entire report
+   */
+  const handleHumanizeReport = async () => {
+    const editor = editorRef.current;
+    if (!editor || !editor.innerText.trim()) {
+      alert('No report content to humanize');
+      return;
+    }
+    const confirmHumanize = window.confirm(
+      'This will humanize your entire report using ML models to make it sound more natural. This may take 30-60 seconds. Continue?'
+    );
+    if (!confirmHumanize) return;
+    setIsHumanizing(true);
+    try {
+      const currentContent = editor.innerText;
+      const humanizedText = await humanization.humanizeText(currentContent);
+      if (humanizedText) {
+        setVersionHistory(prev => [
+          {
+            timestamp: new Date().toLocaleString(),
+            summary: 'ML humanization applied',
+            content: editor.innerHTML,
+          },
+          ...prev,
+        ]);
+        console.log('✅ Report humanization completed');
+      }
+    } catch (error) {
+      console.error('Report humanization failed:', error);
+    } finally {
+      setIsHumanizing(false);
+    }
+  };
+
+  /**
+   * Handle humanization of selected text
+   */
+  const handleHumanizeSelection = async () => {
+    const selection = window.getSelection();
+    const selectedText = selection?.toString().trim();
+    if (!selectedText) {
+      alert('Please select text to humanize');
+      return;
+    }
+    if (selectedText.length < 50) {
+      alert('Please select at least 50 characters for effective humanization');
+      return;
+    }
+    setIsHumanizing(true);
+    try {
+      const humanizedText = await humanization.humanizeText(selectedText);
+      if (humanizedText && editorRef.current) {
+        const range = selection!.getRangeAt(0);
+        range.deleteContents();
+        const span = document.createElement('span');
+        span.className = 'humanized-text bg-purple-100 border border-purple-300 rounded px-1';
+        span.setAttribute('data-original', encodeURIComponent(selectedText));
+        span.innerHTML = humanizedText;
+        range.insertNode(span);
+        window.getSelection()?.removeAllRanges();
+        const actionBox = document.createElement('div');
+        actionBox.className = 'inline-action-box';
+        actionBox.innerHTML = `
+          <button class="accept-btn">✅ Accept</button>
+          <button class="reject-btn">❌ Reject</button>
+        `;
+        span.appendChild(actionBox);
+        setHasUnsavedChanges(true);
+        setVersionHistory(prev => [
+          {
+            timestamp: new Date().toLocaleString(),
+            summary: `Humanized selection: ${selectedText.substring(0, 30)}...`,
+            content: editorRef.current!.innerHTML,
+          },
+          ...prev,
+        ]);
+      }
+    } catch (error) {
+      console.error('Selection humanization failed:', error);
+    } finally {
+      setIsHumanizing(false);
+    }
+  };
+
 
   // ========================================
   // USEEFFECTS (consolidated and well-organized)
   // ========================================
 
-  /**
-   * INITIALIZATION EFFECT
-   * ✅ Fixed: Combined multiple localStorage reads into single effect
-   * Loads all persisted data on component mount
-   */
-useEffect(() => {
-  console.log("🔥 Loading persisted data from localStorage...");
-
-  localStorage.setItem('lastSuccessfulPage', '/report');
-
-  const storedReport = localStorage.getItem("labReport");
-  const storedChart = localStorage.getItem("chartSpec");
-  const storedRubric = localStorage.getItem("rubricText");
-  const storedManual = localStorage.getItem("manualText");
-  const storedAnalysis = localStorage.getItem("lastRubricAnalysis"); // ✅ NEW
-  const storedTitle = localStorage.getItem("reportTitle"); // 🎯 NEW: Load generated title
-  const savedName = localStorage.getItem("studentName"); // 🎯 NEW: Load saved name
-
-  console.log("📋 Found data:", {
-    report: storedReport ? "✅" : "❌",
-    chart: storedChart ? "✅" : "❌",
-    rubric: storedRubric ? "✅" : "❌",
-    manual: storedManual ? "✅" : "❌",
-    analysis: storedAnalysis ? "✅" : "❌", // ✅ NEW
-    title: storedTitle ? "✅" : "❌", // 🎯 NEW
-    name: savedName ? "✅" : "❌" // 🎯 NEW
-  });
-
-  if (!storedReport || storedReport.trim().length < 50) {
-    console.error("No valid report data found in localStorage");
-    localStorage.setItem('lastError', 'data');
-    router.push("/error?type=data");
-    return;
-  }
-
-  // Set all data
-  if (storedRubric) {
-  setRubricText(storedRubric);
-  // ✅ Set initial message instead of loading previous analysis
-  setRubricFeedback("📋 Rubric loaded! Click 'Check for Completeness' for detailed analysis.");
-  setRubricAnalysis(""); // ✅ Keep analysis blank until user clicks
-}
-  if (storedManual) setManualText(storedManual);
-  if (storedAnalysis) {
-    
-  }
-
-  // 🎯 NEW: Set title and name from localStorage
-  if (storedTitle) {
-    setTitle(storedTitle);
-  }
-  if (savedName) {
-    setName(savedName);
-  }
-
-    // Parse and set report content
+  useEffect(() => {
+    console.log("🔥 Loading persisted data from localStorage...");
+    localStorage.setItem('lastSuccessfulPage', '/report');
+    const storedReport = localStorage.getItem("labReport");
+    const storedChart = localStorage.getItem("chartSpec");
+    const storedRubric = localStorage.getItem("rubricText");
+    const storedManual = localStorage.getItem("manualText");
+    const storedAnalysis = localStorage.getItem("lastRubricAnalysis");
+    const storedTitle = localStorage.getItem("reportTitle");
+    const savedName = localStorage.getItem("studentName");
+    console.log("📋 Found data:", {
+      report: storedReport ? "✅" : "❌",
+      chart: storedChart ? "✅" : "❌",
+      rubric: storedRubric ? "✅" : "❌",
+      manual: storedManual ? "✅" : "❌",
+      analysis: storedAnalysis ? "✅" : "❌",
+      title: storedTitle ? "✅" : "❌",
+      name: savedName ? "✅" : "❌"
+    });
+    if (!storedReport || storedReport.trim().length < 50) {
+      console.error("No valid report data found in localStorage");
+      localStorage.setItem('lastError', 'data');
+      router.push("/error?type=data");
+      return;
+    }
+    if (storedRubric) {
+      setRubricText(storedRubric);
+      setRubricFeedback("📋 Rubric loaded! Click 'Check for Completeness' for detailed analysis.");
+      setRubricAnalysis("");
+    }
+    if (storedManual) setManualText(storedManual);
+    if (storedTitle) setTitle(storedTitle);
+    if (savedName) setName(savedName);
     if (storedReport && editorRef.current) {
       const parseAndSet = async () => {
         try {
@@ -965,14 +830,11 @@ useEffect(() => {
             setReportText(parsed);
           }
         } catch {
-          // ✅ ADD THIS: Redirect on parse error
           router.push("/error");
         }
       };
       parseAndSet();
     }
-
-    // Parse chart specification
     if (storedChart) {
       try {
         const parsed: ChartSpec = JSON.parse(storedChart);
@@ -981,63 +843,40 @@ useEffect(() => {
         console.error("Invalid chartSpec in localStorage:", e);
       }
     }
-
     console.log("✅ Data loading completed");
-  }, [router]); // ✅ ADD router to dependency array
+  }, [router]);
 
-  /**
-   * CHART MANAGEMENT EFFECT
-   * ✅ Fixed: Use ref instead of module variable, proper cleanup
-   * Handles chart creation, updates, and cleanup
-   */
   useEffect(() => {
     if (!chartSpec || !chartRef.current) return;
-
-    console.log("📊 Creating/updating chart visualization...");
-    
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
-
-    // Destroy existing chart to prevent memory leaks
     if (chartInstanceRef.current) {
-    chartInstanceRef.current.destroy();
-    chartInstanceRef.current = null;
-  }
-
-    // Generate chart labels
+      chartInstanceRef.current.destroy();
+      chartInstanceRef.current = null;
+    }
     const labels = Array.isArray(chartSpec.labels) && chartSpec.labels.length > 0
       ? chartSpec.labels
       : Array.isArray(chartSpec.series?.[0]?.values)
         ? chartSpec.series[0].values.map((_, i) => i)
         : [];
-
-    // Warn about scatter plot configuration issues
     if (chartSpec.graphType === "scatter" && !Array.isArray(chartSpec.labels)) {
       console.warn("⚠️ Scatter graph expected labels[], but none were provided.");
     }
-
-    // Generate datasets with optional trendlines
     const datasets = chartSpec.series.flatMap((s, i) => {
       const baseColor = `hsl(${i * 90}, 70%, 50%)`;
       const pointData = labels.map((x, idx) => ({ x: Number(x), y: s.values[idx] }));
-
       const addTrendline = chartSpec.graphType === "scatter" && pointData.length > 1;
       const trendlineDataset = [];
-
-      // Calculate and add trendline for scatter plots
       if (addTrendline) {
         const n = pointData.length;
         const sumX = pointData.reduce((sum, p) => sum + p.x, 0);
         const sumY = pointData.reduce((sum, p) => sum + p.y, 0);
         const sumXY = pointData.reduce((sum, p) => sum + p.x * p.y, 0);
         const sumX2 = pointData.reduce((sum, p) => sum + p.x * p.x, 0);
-
         const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
         const intercept = (sumY - slope * sumX) / n;
-
         const xMin = Math.min(...pointData.map(p => p.x));
         const xMax = Math.max(...pointData.map(p => p.x));
-
         trendlineDataset.push({
           label: `${s.label} (Trendline)`,
           data: [
@@ -1052,7 +891,6 @@ useEffect(() => {
           type: 'line'
         });
       }
-
       return [
         {
           type: chartSpec.graphType,
@@ -1065,109 +903,69 @@ useEffect(() => {
         ...trendlineDataset
       ];
     });
-
-    // Create new chart instance - Fix: Use ChartJS constructor
-  chartInstanceRef.current = new ChartJS(ctx, {
-    type: chartSpec.graphType,
-    data: { labels, datasets: datasets as ChartDataset[] },
-    options: {
-      responsive: true,
-      scales: {
-        x: {
-          type: chartSpec.graphType === "scatter" ? "linear" : "category",
-          title: { display: true, text: chartSpec.xLabel },
-        },
-        y: {
-          title: { display: true, text: chartSpec.yLabel },
+    chartInstanceRef.current = new ChartJS(ctx, {
+      type: chartSpec.graphType,
+      data: { labels, datasets: datasets as ChartDataset[] },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            type: chartSpec.graphType === "scatter" ? "linear" : "category",
+            title: { display: true, text: chartSpec.xLabel },
+          },
+          y: {
+            title: { display: true, text: chartSpec.yLabel },
+          },
         },
       },
-    },
-  });
-
-    console.log("✅ Chart created successfully");
-
-    // Cleanup function to prevent memory leaks
+    });
     return () => {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy();
         chartInstanceRef.current = null;
       }
     };
-  }, [chartSpec]); // Re-run when chartSpec changes
+  }, [chartSpec]);
 
-  /**
-   * EVENT HANDLERS EFFECT
-   * ✅ Fixed: Single effect with proper cleanup, no duplicates
-   * Sets up DOM event listeners for edit suggestion interactions
-   */
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-
-    console.log("🖱️ Setting up edit suggestion event handlers...");
-
-    /**
-     * Handle clicks on accept/reject buttons in edit suggestions
-     */
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const container = target.closest(".inline-edit-suggestion") as HTMLElement;
       if (!container) return;
-
-      // Handle Accept button click
       if (target.classList.contains("accept-btn")) {
-        console.log("✅ Accepting edit suggestion");
-        
         const contentSpan = container.querySelector('.streaming-content');
         if (contentSpan) {
-          // Extract content and replace container with actual content
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = contentSpan.innerHTML;
-          
           const fragment = document.createDocumentFragment();
           while (tempDiv.firstChild) {
             fragment.appendChild(tempDiv.firstChild);
           }
           container.replaceWith(fragment);
         } else {
-          // Fallback: just remove suggestion styling
           container.classList.remove("inline-edit-suggestion", "bg-yellow-100", "border-yellow-300");
           const box = container.querySelector(".inline-action-box");
           if (box) box.remove();
           container.removeAttribute("data-original");
         }
-        
-        // Update report state and persist to localStorage
         setReportText(editor.innerHTML);
         localStorage.setItem("labReport", editor.innerText);
       }
-
-      // Handle Reject button click
       if (target.classList.contains("reject-btn")) {
-        console.log("❌ Rejecting edit suggestion");
-        
         const original = decodeURIComponent(container.dataset.original || "").trim();
-        
-        // Replace suggestion with original text
         const textNode = document.createTextNode(original);
         container.replaceWith(textNode);
-        
-        // Update report state and persist to localStorage
         setReportText(editor.innerHTML);
         localStorage.setItem("labReport", editor.innerText);
       }
     };
-
-    /**
-     * Handle hover to show accept/reject buttons
-     */
     const handleHover = (e: MouseEvent) => {
       const container = (e.target as HTMLElement).closest(".inline-edit-suggestion") as HTMLElement;
       if (!container || 
           container.querySelector(".inline-action-box") || 
           container.classList.contains("animate-pulse")) return;
-
-      // Create and append action buttons
       const box = document.createElement("div");
       box.className = "inline-action-box absolute left-0 top-full mt-1 bg-white border border-gray-300 text-sm px-2 py-1 rounded shadow-lg flex gap-2 z-50 whitespace-nowrap";
       box.innerHTML = `
@@ -1176,35 +974,22 @@ useEffect(() => {
       `;
       container.appendChild(box);
     };
-
-    // Add event listeners
     document.addEventListener("click", handleClick);
     editor.addEventListener("mouseover", handleHover);
-
-    // Cleanup function to prevent memory leaks
     return () => {
       document.removeEventListener("click", handleClick);
       editor.removeEventListener("mouseover", handleHover);
     };
-  }, []); // Empty dependency array - set up once
+  }, []);
 
-  /**
-   * RUBRIC PERSISTENCE EFFECT
-   * Save rubric feedback when analysis completes
-   */
   useEffect(() => {
     if (!isStreaming && rubricFeedback && cleanRubric) {
       localStorage.setItem("lastRubricFeedback", cleanRubric);
     }
   }, [isStreaming, rubricFeedback, cleanRubric]);
 
-  /**
-   * KEYBOARD SHORTCUTS EFFECT
-   * Add Ctrl/Cmd + S to save manually
-   */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + S to save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         if (hasUnsavedChanges && currentReportId) {
@@ -1215,15 +1000,10 @@ useEffect(() => {
         }
       }
     };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [hasUnsavedChanges, currentReportId, saveCurrentReport]);
 
-  /**
-   * BEFOREUNLOAD WARNING EFFECT
-   * Warn user about unsaved changes when leaving page
-   */
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges) {
@@ -1232,10 +1012,42 @@ useEffect(() => {
         return e.returnValue;
       }
     };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  // Enhanced event handlers for humanized text interactions
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const container = target.closest(".humanized-text") as HTMLElement;
+      if (!container) return;
+      if (target.classList.contains("accept-btn")) {
+        console.log("✅ Accepting ML humanization");
+        const contentSpan = container.querySelector('.humanized-content') || container;
+        container.classList.remove("humanized-text", "bg-purple-100", "border-purple-300");
+        const box = container.querySelector(".inline-action-box");
+        if (box) box.remove();
+        container.removeAttribute("data-original");
+        setReportText(editor.innerHTML);
+        localStorage.setItem("labReport", editor.innerText);
+      }
+      if (target.classList.contains("reject-btn")) {
+        console.log("❌ Rejecting ML humanization");
+        const original = decodeURIComponent(container.dataset.original || "").trim();
+        const textNode = document.createTextNode(original);
+        container.replaceWith(textNode);
+        setReportText(editor.innerHTML);
+        localStorage.setItem("labReport", editor.innerText);
+      }
+    };
+    document.addEventListener("click", handleClick);
+    return () => {
+      document.removeEventListener("click", handleClick);
+    };
+  }, []);
 
   // ========================================
   // RENDER JSX
@@ -1246,23 +1058,19 @@ useEffect(() => {
     currentPage="report" 
     userTier={userTier} 
     usageInfo={usageInfo}
-    showHowToEdit={true}  // This adds the "How to Edit" box to left sidebar
+    showHowToEdit={true}
     onReportSelect={handleReportSelect}
     currentReportId={currentReportId}
     reportLoading={reportLoading}
   >
-    {/* Main Content Area */}
     <div className="flex flex-1">
         <div className="flex-1 bg-[#f9fdfc] p-6 overflow-y-auto">
           <div className="bg-white shadow rounded-xl p-6 mb-6">
-            {/* Title Section - Now shows Claude-generated title from upload */}
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
                 <h2 className="text-xl font-semibold text-cyan-700 mb-2">
                   {title}
                 </h2>
-                
-                {/* Student Name - Editable */}
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                   <span>Name:</span>
                   {isEditingName ? (
@@ -1296,7 +1104,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Copy Button */}
             <div className="flex justify-start">
               <button
                 onClick={handleCopyReport}
@@ -1321,7 +1128,22 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Auto-save Status Indicator */}
+          {(isHumanizing || humanization.isProcessing) && (
+            <div className="bg-white shadow rounded-xl p-4 mb-4 border-l-4 border-purple-500">
+              <div className="flex items-center gap-3">
+                <RefreshCw className="w-5 h-5 text-purple-600 animate-spin" />
+                <div>
+                  <div className="text-sm font-medium text-gray-800">
+                    ML Humanization in Progress
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {humanization.progress || 'Processing with advanced language models...'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {currentReportId && (
             <div className="bg-white shadow rounded-xl p-4 mb-4 border-l-4 border-blue-500">
               <div className="flex items-center justify-between">
@@ -1342,14 +1164,12 @@ useEffect(() => {
                        'No changes'}
                     </span>
                   </div>
-                  
                   {lastSaved && (
                     <span className="text-xs text-gray-500">
                       Last saved: {lastSaved.toLocaleTimeString()}
                     </span>
                   )}
                 </div>
-                
                 <div className="flex items-center gap-2">
                   {hasUnsavedChanges && (
                     <button
@@ -1360,7 +1180,6 @@ useEffect(() => {
                       Save Now
                     </button>
                   )}
-                  
                   <span className="text-xs text-gray-400">
                     Report ID: {currentReportId.slice(-8)}
                   </span>
@@ -1369,17 +1188,16 @@ useEffect(() => {
             </div>
           )}
 
-          {/* Main Editor - ContentEditable Report Area */}
           <div
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
             onInput={(e) => {
               setReportText(e.currentTarget.innerHTML);
-              setHasUnsavedChanges(true); // Track that user made changes
+              setHasUnsavedChanges(true);
             }}
             onMouseUp={handleHighlightEdit}
-            className="prose prose-lg max-w-full p-6 bg-white shadow border border-blue-100"
+            className="prose prose-lg max-w-full p-6 bg-white shadow border border-blue-100 relative"
             style={{
               fontFamily: "Times New Roman, serif",
               fontSize: "12pt",
@@ -1393,7 +1211,6 @@ useEffect(() => {
             }}
           />
 
-          {/* Text Editing Modal */}
           {modalOpen && (
             <PromptPopover
               open={modalOpen}
@@ -1404,7 +1221,6 @@ useEffect(() => {
             />
           )}
 
-          {/* Streaming Indicator */}
           {isEditStreaming && (
             <div className="fixed top-4 right-4 bg-blue-100 border border-blue-300 rounded-lg p-3 shadow-lg z-50">
               <div className="flex items-center gap-2 text-blue-800">
@@ -1414,98 +1230,107 @@ useEffect(() => {
             </div>
           )}
 
+          {showHumanizationPanel && (
+            <div className="mt-6">
+              <HumanizationPanel
+                originalText={reportText}
+                onHumanized={(humanizedText) => {
+                  if (editorRef.current) {
+                    editorRef.current.innerHTML = humanizedText;
+                    setReportText(humanizedText);
+                    setHasUnsavedChanges(true);
+                  }
+                }}
+              />
+            </div>
+          )}
+
           <div className="mt-8 space-y-6">
-  {/* Grading Rubric Section */}
-{rubricText && (
-  <div>
-    <div className="flex items-center justify-between mb-3">
-      <h2 className="text-lg font-semibold flex items-center gap-2">
-        📋 Grading Rubric
-        <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-          Points-based evaluation
-        </span>
-      </h2>
-      <button
-        onClick={() => setShowOriginalRubric(!showOriginalRubric)}
-        className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-      >
-        {showOriginalRubric ? "Hide Rubric" : "Show Rubric"}
-        <ChevronDown className={`transform transition-transform ${showOriginalRubric ? 'rotate-180' : ''}`} size={16} />
-      </button>
-    </div>
-    
-    {showOriginalRubric && (
-      <div className="border border-gray-200 bg-gray-50 rounded-lg p-4 text-sm max-h-64 overflow-y-auto">
-        <div className="whitespace-pre-line text-gray-800 font-mono text-xs leading-relaxed">
-          {stripMarkdownSync(rubricText)}
-        </div>
-      </div>
-    )}
-  </div>
-)}
+            {rubricText && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    📋 Grading Rubric
+                    <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                      Points-based evaluation
+                    </span>
+                  </h2>
+                  <button
+                    onClick={() => setShowOriginalRubric(!showOriginalRubric)}
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    {showOriginalRubric ? "Hide Rubric" : "Show Rubric"}
+                    <ChevronDown className={`transform transition-transform ${showOriginalRubric ? 'rotate-180' : ''}`} size={16} />
+                  </button>
+                </div>
+                {showOriginalRubric && (
+                  <div className="border border-gray-200 bg-gray-50 rounded-lg p-4 text-sm max-h-64 overflow-y-auto">
+                    <div className="whitespace-pre-line text-gray-800 font-mono text-xs leading-relaxed">
+                      {stripMarkdownSync(rubricText)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
-{/* AI Report Analysis Section */}
-<div>
-  <div className="flex items-center justify-between mb-3">
-    <h2 className="text-lg font-semibold flex items-center gap-2">
-      🤖 AI Report Analysis
-      {rubricAnalysis && rubricAnalysis.trim() && (
-        <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-          Analysis complete
-        </span>
-      )}
-    </h2>
-    
-    <button
-      onClick={handleCheckCompleteness}
-      disabled={isStreaming}
-      className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50"
-    >
-      <RefreshCw size={14} className={isStreaming ? 'animate-spin' : ''} />
-      {isStreaming ? 'Analyzing...' : (rubricAnalysis ? 'Re-analyze' : 'Check Completeness')}
-    </button>
-  </div>
-  
-  <div className="border border-gray-300 bg-white rounded-lg p-4 text-sm max-h-96 overflow-y-auto">
-    {rubricAnalysis && rubricAnalysis.trim() ? (
-      <div className="whitespace-pre-wrap space-y-2">
-        {rubricAnalysis.split('\n').map((line, index) => {
-          if (line.includes('✅') || line.includes('Excellent')) {
-            return <div key={index} className="text-green-700 font-medium">{line}</div>;
-          } else if (line.includes('⚠️') || line.includes('Consider')) {
-            return <div key={index} className="text-yellow-700">{line}</div>;
-          } else if (line.includes('❌') || line.includes('Missing')) {
-            return <div key={index} className="text-red-700 font-medium">{line}</div>;
-          } else {
-            return <div key={index} className="text-gray-700">{line}</div>;
-          }
-        })}
-      </div>
-    ) : (
-      <div className="text-gray-500 italic text-center py-8">
-        {isStreaming ? (
-          <div className="flex items-center justify-center gap-2">
-            <RefreshCw className="animate-spin" size={16} />
-            Claude is analyzing your report against the rubric...
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  🤖 AI Report Analysis
+                  {rubricAnalysis && rubricAnalysis.trim() && (
+                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                      Analysis complete
+                    </span>
+                  )}
+                </h2>
+                <button
+                  onClick={handleCheckCompleteness}
+                  disabled={isStreaming}
+                  className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={isStreaming ? 'animate-spin' : ''} />
+                  {isStreaming ? 'Analyzing...' : (rubricAnalysis ? 'Re-analyze' : 'Check Completeness')}
+                </button>
+              </div>
+              <div className="border border-gray-300 bg-white rounded-lg p-4 text-sm max-h-96 overflow-y-auto">
+                {rubricAnalysis && rubricAnalysis.trim() ? (
+                  <div className="whitespace-pre-wrap space-y-2">
+                    {rubricAnalysis.split('\n').map((line, index) => {
+                      if (line.includes('✅') || line.includes('Excellent')) {
+                        return <div key={index} className="text-green-700 font-medium">{line}</div>;
+                      } else if (line.includes('⚠️') || line.includes('Consider')) {
+                        return <div key={index} className="text-yellow-700">{line}</div>;
+                      } else if (line.includes('❌') || line.includes('Missing')) {
+                        return <div key={index} className="text-red-700 font-medium">{line}</div>;
+                      } else {
+                        return <div key={index} className="text-gray-700">{line}</div>;
+                      }
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-gray-500 italic text-center py-8">
+                    {isStreaming ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <RefreshCw className="animate-spin" size={16} />
+                        Claude is analyzing your report against the rubric...
+                      </div>
+                    ) : (
+                      rubricText 
+                        ? "Click 'Check Completeness' above to get detailed AI analysis of your report based on the rubric." 
+                        : "No rubric available. Upload files with grading criteria to see detailed feedback."
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            {rubricAnalysis && !isStreaming && (
+              <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
+                <span>💡 Analysis based on your uploaded rubric and lab manual</span>
+                <span>Last updated: {new Date().toLocaleTimeString()}</span>
+              </div>
+            )}
           </div>
-        ) : (
-          rubricText 
-            ? "Click 'Check Completeness' above to get detailed AI analysis of your report based on the rubric." 
-            : "No rubric available. Upload files with grading criteria to see detailed feedback."
-        )}
-      </div>
-    )}
-  </div>
-</div>
-    {rubricAnalysis && !isStreaming && (
-      <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
-        <span>💡 Analysis based on your uploaded rubric and lab manual</span>
-        <span>Last updated: {new Date().toLocaleTimeString()}</span>
-      </div>
-    )}
-</div>
 
-          {/* Version History Section */}
           <div className="mt-8">
             <h2 className="text-lg font-semibold mb-2">Version History</h2>
             <ul className="space-y-2">
@@ -1526,34 +1351,29 @@ useEffect(() => {
             </ul>
           </div>
 
-          {/* Chart Visualization Section */}
-          {/* Chart Visualization Section */}
-<div className="mt-12">
-  <h2 className="text-lg font-semibold mb-4">Data Visualization</h2>
-  
-  {chartSpec ? (
-    <canvas ref={chartRef} className="w-full max-w-3xl" height={300} />
-  ) : (
-    <div className="flex items-center justify-center py-12 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl">
-      <div className="text-center">
-        <div className="text-gray-400 mb-4">
-          <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        </div>
-        <h3 className="text-lg font-medium text-gray-700 mb-2">No Raw Data Provided</h3>
-        <p className="text-gray-500 text-sm max-w-md">
-          Upload an Excel file (.xlsx) with your experimental data to generate charts and visualizations for your lab report.
-        </p>
-      </div>
-    </div>
-  )}
-</div>
+          <div className="mt-12">
+            <h2 className="text-lg font-semibold mb-4">Data Visualization</h2>
+            {chartSpec ? (
+              <canvas ref={chartRef} className="w-full max-w-3xl" height={300} />
+            ) : (
+              <div className="flex items-center justify-center py-12 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl">
+                <div className="text-center">
+                  <div className="text-gray-400 mb-4">
+                    <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-700 mb-2">No Raw Data Provided</h3>
+                  <p className="text-gray-500 text-sm max-w-md">
+                    Upload an Excel file (.xlsx) with your experimental data to generate charts and visualizations for your lab report.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right Sidebar */}
         <aside className="w-72 p-4 border-l bg-white space-y-4 shadow-sm">
-          {/* AI Writing Assistant Card */}
           <div className="bg-gradient-to-br from-[#00e3ae] to-[#0090f1] text-white rounded-xl p-4">
             <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
               <Wand2 size={16} /> AI Writing Assistant
@@ -1561,7 +1381,15 @@ useEffect(() => {
             <p className="text-sm">Highlight text and get instant AI suggestions for improvement.</p>
           </div>
 
-          {/* Quick Actions Section */}
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl p-4">
+            <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+              <Bot size={16} /> ML Humanization
+            </h3>
+            <p className="text-sm text-purple-100">
+              Make your text sound naturally human with advanced ML models.
+            </p>
+          </div>
+
           <div className="bg-white border border-gray-200 rounded-xl p-4 shadow">
             <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
               <Lightbulb size={16} className="text-cyan-600"/> Quick Actions
@@ -1569,29 +1397,61 @@ useEffect(() => {
             <div className="space-y-2">
               <button 
                 onClick={handleRegenerateReport}
-                disabled={isEditStreaming}
+                disabled={isEditStreaming || isHumanizing}
                 className={`flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition-colors ${
-                  isEditStreaming ? 'opacity-50 cursor-not-allowed' : ''
+                  isEditStreaming || isHumanizing ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 <RefreshCw size={16} className={`text-cyan-600 ${isEditStreaming ? 'animate-spin' : ''}`}/>
                 {isEditStreaming ? 'Regenerating...' : 'Regenerate Entire Report'}
               </button>
+              
+              <button 
+                onClick={handleHumanizeReport}
+                disabled={isEditStreaming || isHumanizing}
+                className={`flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition-colors ${
+                  isEditStreaming || isHumanizing ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <Bot size={16} className="text-purple-600"/>
+                {isHumanizing ? 'Humanizing...' : 'Humanize Entire Report'}
+              </button>
+
+              <button 
+                onClick={handleHumanizeSelection}
+                disabled={isEditStreaming || isHumanizing}
+                className={`flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition-colors ${
+                  isEditStreaming || isHumanizing ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <Sparkles size={16} className="text-purple-600"/>
+                Humanize Selection
+              </button>
+
+              <button 
+                onClick={() => setShowHumanizationPanel(!showHumanizationPanel)}
+                className="flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Wand2 size={16} className="text-purple-600"/>
+                {showHumanizationPanel ? 'Hide ML Panel' : 'Show ML Panel'}
+              </button>
+
               <button 
                 onClick={handleImproveTone}
-                disabled={isEditStreaming}
+                disabled={isEditStreaming || isHumanizing}
                 className={`flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition-colors ${
-                  isEditStreaming ? 'opacity-50 cursor-not-allowed' : ''
+                  isEditStreaming || isHumanizing ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 <PenLine size={16} className="text-green-600"/>
                 {isEditStreaming ? 'Improving...' : 'Improve Academic Tone'}
               </button>
+
               <button 
                 onClick={handleCheckCompleteness} 
-                disabled={isEditStreaming}
+                disabled={isEditStreaming || isHumanizing}
                 className={`flex items-center gap-2 w-full py-2 px-3 border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition-colors ${
-                  isEditStreaming ? 'opacity-50 cursor-not-allowed' : ''
+                  isEditStreaming || isHumanizing ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 <ListChecks size={16} className="text-blue-600"/>
@@ -1600,8 +1460,6 @@ useEffect(() => {
             </div>
           </div>
 
-
-          {/* Export Options Section */}
           <div className="bg-white border border-gray-200 rounded-xl p-4 shadow">
             <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
               <ArrowDownToLine size={16} className="text-cyan-600"/> Export Report
@@ -1634,7 +1492,23 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Progress Tracking Section */}
+          {humanization.isProcessing && (
+            <div className="bg-white border border-purple-200 rounded-xl p-4 shadow">
+              <h4 className="text-sm font-semibold text-purple-800 mb-2 flex items-center gap-2">
+                <Bot size={16} /> ML Processing
+              </h4>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={14} className="text-purple-600 animate-spin" />
+                  <span className="text-sm text-purple-700">{humanization.progress}</span>
+                </div>
+                <div className="w-full bg-purple-100 h-2 rounded-full">
+                  <div className="h-2 bg-purple-500 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white border border-gray-200 rounded-xl p-4 shadow">
             <h4 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
               <Target size={16} /> Progress
