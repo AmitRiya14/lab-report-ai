@@ -3,7 +3,7 @@ services:
   - type: web
     name: lab-report-ai
     env: docker
-    repo: https://github.com/AmitRiya14/lab-report-ai # Replace if your repo URL is different
+    repo: https://github.com/AmitRiya14/lab-report-ai
     dockerContext: .
     dockerfilePath: ./Dockerfile
     domains:
@@ -13,24 +13,21 @@ services:
         value: production
       - key: ML_SERVICE_URL
         value: http://ml-service:8000
-      # IMPORTANT: Add all your other secrets (NEXTAUTH_URL, database keys, etc.)
-      # in the Render dashboard under the 'Environment' tab after creating the blueprint.
       - key: NEXTAUTH_URL
-        value: https://gradelylabs.com # Use your custom domain here
+        value: https://gradelylabs.com
 
   # The Python ML Backend Service
   - type: web
     name: ml-service
     env: docker
-    repo: https://github.com/AmitRiya14/lab-report-ai # Replace if your repo URL is different
+    repo: https://github.com/AmitRiya14/lab-report-ai
     dockerContext: ./ml-service
     dockerfilePath: ./ml-service/Dockerfile
-    healthCheck:
-      path: /health
+    healthCheckPath: /health
+    envVars:
+      - key: TRANSFORMERS_CACHE
+        value: /app/.cache
     disks:
       - name: ml-cache
         mountPath: /app/.cache
         sizeGB: 10
-    envVars:
-      - key: TRANSFORMERS_CACHE
-        value: /app/.cache
