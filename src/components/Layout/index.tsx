@@ -1,10 +1,12 @@
-// components/Layout/index.tsx - Fixed version with Previous Reports
+// components/Layout/index.tsx - Fixed version with Previous Reports and Exit Intent Modal
 import React from 'react';
 import { useSession } from 'next-auth/react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import AuthGuard from '../AuthGuard';
 import { useUsage } from '@/hooks/useUsage';
+import { useExitIntent } from '@/hooks/useExitIntent'; // Import the new hook
+import { ExitIntentModal } from '../ExitIntentModal'; // Import the new component
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,11 +23,11 @@ interface LayoutProps {
   reportLoading?: boolean;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ 
-  children, 
-  currentPage, 
-  userTier, 
-  usageInfo, 
+export const Layout: React.FC<LayoutProps> = ({
+  children,
+  currentPage,
+  userTier,
+  usageInfo,
   showHowToEdit,
   onReportSelect,
   currentReportId,
@@ -33,6 +35,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const { data: session } = useSession();
   const { usage, loading } = useUsage();
+  const { showModal, setShowModal } = useExitIntent(); // Use the exit intent hook
 
   // Get actual user data from session or hook
   const actualUserTier = session?.user?.tier || userTier || 'Free';
@@ -56,18 +59,19 @@ export const Layout: React.FC<LayoutProps> = ({
 
   return (
     <AuthGuard>
+      {showModal && <ExitIntentModal onClose={() => setShowModal(false)} />}
       <div className="flex flex-col min-h-screen font-sans text-gray-800">
-        <Header 
-          currentPage={currentPage} 
-          userTier={actualUserTier} 
+        <Header
+          currentPage={currentPage}
+          userTier={actualUserTier}
           usageInfo={actualUsageInfo}
           session={session} // This now matches the Session | null type
         />
         <div className="flex flex-1">
-          <Sidebar 
-            currentPage={currentPage} 
-            userTier={actualUserTier} 
-            usageInfo={actualUsageInfo} 
+          <Sidebar
+            currentPage={currentPage}
+            userTier={actualUserTier}
+            usageInfo={actualUsageInfo}
             showHowToEdit={showHowToEdit}
             onReportSelect={onReportSelect}
             currentReportId={currentReportId}
